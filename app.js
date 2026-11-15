@@ -17,7 +17,10 @@ function lsJson(k, d){ try{ var v = JSON.parse(lsGet(k)); return v == null ? d :
 function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[c]; }); }
 function randId(){ var s = ''; while(s.length < 12) s += P.cryptoInt(36).toString(36); return s; }
 var standalone = (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone;
-function gname(i){ return '第 ' + i + ' 組'; }
+// 評量對象：小組（第 N 組）或個人（N 號）
+function isPer(){ return JOIN ? !!(S.T && S.T.person) : !!(G && G.cfg.target === 'person'); }
+function U(g, p){ return isPer() ? p : g; }
+function gname(i){ return isPer() ? i + ' 號' : '第 ' + i + ' 組'; }
 function gcol(i){ return P.TEAM_COLORS[(i - 1 + 1200) % P.TEAM_COLORS.length]; }
 function gchip(i){ return '<span class="gchip" style="background:' + gcol(i) + '">' + i + '</span>'; }
 function f1(x){ return x == null ? '—' : (Math.round(x * 10) / 10).toFixed(1); }
@@ -137,7 +140,8 @@ function netChipHtml(){
 }
 function onlineIds(){ return Object.keys(NET.peers).filter(function(id){ return id !== NET.myId && !/^T\|/.test(NET.peers[id]); }); }
 var rubT;
-function rubricSoon(ms){ clearTimeout(rubT); rubT = setTimeout(function(){ if(!G || NET.role !== 'T') return; nameSoon(); if(G.stage !== 'end'){ queueChats(P.encRubric(G.gid, G.cfg.crit), 'rub'); titleSoon(); } }, ms || 0); }
+function rubricSoon(ms){ clearTimeout(rubT); rubT = setTimeout(function(){ if(!G || NET.role !== 'T') return; nameSoon(); rosterSoon(); if(G.stage !== 'end'){ queueChats(P.encRubric(G.gid, G.cfg.crit), 'rub'); titleSoon(); } }, ms || 0); }
+function rosterSoon(){ if(G && G.cfg.target === 'person') queueChats(P.encRoster(G.gid, G.cfg.names, G.cfg.groups), 'roster'); }
 function nameSoon(){ if(G) queueChats([P.encRoomName(clsName())], 'rname'); }
 function titleSoon(){ var g = curGrp(); if(g && G.cfg.names[g - 1]) queueChats([P.encTitle(G.gid, g, G.cfg.names[g - 1])], 'title'); }
 var qrLib = null;
@@ -151,7 +155,7 @@ function drawQR(id, size){ var el = $(id); if(!el) return; loadQR().then(functio
 /* =====================================================================
    老師端
    ===================================================================== */
-var DEF_CFG = {title:'', groups:6, names:[], preset:'talk', crit:null, self:true, teacherW:0, trim:true, mode:'person', comments:true, presSec:300, scoreSec:90, reveal:'end'};
+var DEF_CFG = {title:'', target:'group', groups:6, names:[], preset:'talk', crit:null, self:true, teacherW:0, trim:true, mode:'person', comments:true, presSec:300, scoreSec:90, reveal:'end'};
 var G = null, V = {home:true, showCur:false};
 /* ---------- 教室：每間教室有自己的名稱、代碼與資料；一個分頁開一間，可以開好幾個分頁同時進行 ---------- */
 var TAB = randId();
@@ -190,7 +194,7 @@ function leaveCls(closeRoom){ if(!G) return; saveG(); lockFree(G.cid); if(NET.wa
 function clsStatus(g){
   if(!g) return ['尚未設定', ''];
   if(g.stage === 'setup') return ['設定中', ''];
-  if(g.stage === 'run') return ['進行中・第 ' + (g.cur + 1) + ' / ' + g.order.length + ' 組' + (g.ph === 2 ? '・評分中' : ''), 'live'];
+  if(g.stage === 'run') return ['進行中・第 ' + (g.cur + 1) + ' / ' + g.order.length + (g.cfg.target === 'person' ? ' 位' : ' 組') + (g.ph === 2 ? '・評分中' : ''), 'live'];
   return ['已結束', 'done'];
 }
 var saveT;
@@ -220,14 +224,14 @@ function allNotes(){
   Object.keys(G.notes).forEach(function(k){ if(G.reviews[k]) return; var n = G.notes[k], m = G.members[n.rid] || {}; out.push({rid:n.rid, who:m.who || '', grp:m.grp || 0, pres:n.pres, kind:m.grp === n.pres ? 'self' : 'peer', s:null, plus:n.plus, minus:n.minus}); });
   return out;
 }
-function result(){ return P.compute(G.cfg, reviewList()); }
+function result(){ var c = G.cfg.target === 'person' ? Object.assign({}, G.cfg, {mode:'person'}) : G.cfg; return P.compute(c, reviewList()); }
 function accepting(pres){ return G.stage === 'run' && curGrp() === pres && (G.ph === 2 || (G.ph === 3 && Date.now() - G.closedAt < 6000)); }
 
 var T = {
   push:function(){
     if(!G) return;
     var g = curGrp(), secs = G.ph === 2 ? Math.ceil(Math.max(0, G.until - Date.now()) / 1000) : 0;
-    setName(P.encT({gid:G.gid, groups:G.cfg.groups, cur:g, ph:G.stage === 'end' ? 9 : G.stage === 'setup' ? 0 : G.ph, nc:G.cfg.crit.length, self:G.cfg.self, comments:G.cfg.comments, locked:!!G.locked, secs:secs}));
+    setName(P.encT({gid:G.gid, groups:G.cfg.groups, cur:g, ph:G.stage === 'end' ? 9 : G.stage === 'setup' ? 0 : G.ph, nc:G.cfg.crit.length, self:G.cfg.self, comments:G.cfg.comments, locked:!!G.locked, person:G.cfg.target === 'person', secs:secs}));
   },
   // 關閉加入：不在名單上的新連線一律請出（轉播站 kick，關閉碼 4005）；開放加入時 unkick
   gate:function(id, name){
@@ -324,7 +328,7 @@ function presLeft(){ return G.pres.runAt ? G.pres.left - (Date.now() - G.pres.ru
 
 /* ---------- 老師：共用片段 ---------- */
 function topBar(){
-  return '<div class="top noprint"><h1>📝 同儕互評 <small>小組報告即時評分</small></h1>' +
+  return '<div class="top noprint"><h1>📝 同儕互評 <small>小組／個人報告即時評分</small></h1>' +
     (G && !V.home ? '<button class="ibtn" data-act="home">🏠 首頁</button><button class="ibtn" data-act="renameCls" data-id="' + esc(G.cid) + '" title="改教室名稱">🏫 ' + esc(clsName()) + '</button><button class="ibtn" id="netChip" data-act="room">' + netChipHtml() + '</button>' : '') +
     '<a class="ibtn" href="manual.html">📖 操作手冊</a><button class="ibtn" data-act="settings" aria-label="常用設定">⚙</button></div>' +
     '<p class="warn-line noprint">互評分數是同學的主觀意見，建議當作回饋與參考，搭配老師評分使用。<button data-act="warn">⚠ 使用警語</button></p>';
@@ -337,7 +341,7 @@ function footer(){
 function homeView(){
   return topBar() +
     '<section class="hero"><div><h2 class="ttl">台上報告，<br><span class="hl">台下用手機評分</span></h2>' +
-    '<p>小組輪流上台，其他同學掃 QR code，依評分量表打 1～5 分，再寫一句優點和建議。結束後自動算出每組分數、雷達圖和評語，一鍵印出各組回饋單。</p>' +
+    '<p>小組或個人輪流上台，其他同學掃 QR code，依評分量表打 1～5 分，再寫一句優點和建議。結束後自動算出每組分數、雷達圖和評語，一鍵印出各組回饋單。</p>' +
     '<div class="go"><button class="btn big red" data-act="newCls">＋ 新增教室</button>' + (G ? '<button class="btn alt big" data-act="resume">▶ 回到「' + esc(clsName()) + '」</button>' : '') + '</div>' +
     '<p class="small">學生不用下載 App、不用登入。沒有手機的同學，老師可以收紙本評分單再幫忙輸入。　<a href="?join">📱 我是學生，輸入代碼</a></p></div>' +
     '<div class="demo" aria-hidden="true"><span class="stamp">已評</span><h3 style="font-size:1.1rem">第 3 組・校園二手書平台</h3><div class="small" style="margin-bottom:.4rem">同儕 24 份・老師 1 份</div>' +
@@ -346,7 +350,8 @@ function homeView(){
     clsListHtml() +
     '<section class="feats">' +
     feat('📋', '評分量表自己定', '6 組常用量表（簡報、創業提案、海報、專題、行銷企劃、產品展示），項目、權重、說明都能改。') +
-    feat('⚖', '分數更公平', '自己的組不能評他評；可以開自評比較落差。可去掉最高最低分、選每人一票或每組一票、加老師分數比重。') +
+    feat('👥', '小組或個人都能評', '小組報告：其他組幫上台的組打分。個人報告：貼上名單，學生點自己的名字，每個人輪流被全班評。') +
+    feat('⚖', '分數更公平', '自己（的組）不能評他評；可以開自評比較落差。可去掉最高最低分、選每人一票或每組一票、加老師分數比重。') +
     feat('🔍', '看出誰亂給分', '自動標出全部給滿分、每項都一樣、給分偏寬或偏嚴的評分者，老師心裡有數。') +
     feat('🖨', '回饋單一鍵印', '每組一張：分數、雷達圖、各項跟全班比較、同學的優點與建議。也能下載 CSV 或印紙本評分單。') +
     '</section>' +
@@ -362,7 +367,7 @@ function clsListHtml(){
     var g = loadEvent(c.id), st = clsStatus(g), here = G && G.cid === c.id, busy = !here && lockBusy(c.id);
     var n = g ? Object.keys(g.reviews || {}).length : 0;
     return '<div class="clscard' + (here ? ' here' : '') + '"><div class="cn">🏫 ' + esc(c.name) + '</div>' +
-      '<div class="cm">' + esc(g && g.cfg.title ? g.cfg.title : '（還沒取活動名稱）') + '</div>' +
+      '<div class="cm">' + esc(g && g.cfg.title ? g.cfg.title : '（還沒取活動名稱）') + (g ? '・' + (g.cfg.target === 'person' ? '個人 ' + g.cfg.groups + ' 人' : '小組 ' + g.cfg.groups + ' 組') : '') + '</div>' +
       '<div class="cs"><span class="tag ' + (st[1] === 'live' ? 'green' : st[1] === 'done' ? '' : 'amber') + '">' + st[0] + '</span>' + (g ? '<span class="tag">代碼 ' + esc(g.room) + '</span>' : '') + (g && g.locked ? '<span class="tag red">🔒 關閉加入</span>' : '') + (n ? '<span class="tag">' + n + ' 份評分</span>' : '') +
       (here ? '<span class="tag red">這個分頁</span>' : busy ? '<span class="tag red">在其他分頁開啟中</span>' : '') + '</div>' +
       '<div class="go" style="margin-top:.5rem">' + (here ? '<button class="btn sm" data-act="resume">▶ 回到教室</button>' : '<button class="btn sm" data-act="enterCls" data-id="' + esc(c.id) + '">' + (busy ? '改在這裡開' : '▶ 進入') + '</button>' + (busy ? '' : '<a class="btn alt sm" href="?c=' + esc(c.id) + '" target="_blank" rel="noopener">↗ 新分頁</a>')) +
@@ -378,23 +383,26 @@ function setupView(){
   var c = G.cfg;
   var h = topBar() + '<section class="card margin"><h2>① 活動資料</h2><p class="lead">教室：<b>🏫 ' + esc(clsName()) + '</b>　<button class="btn alt sm" data-act="renameCls" data-id="' + esc(G.cid) + '">✏ 改名</button></p><div class="form">' +
     '<label class="fld">活動名稱<input id="cTitle" maxlength="30" value="' + esc(c.title) + '" placeholder="例如：期末專題發表"></label>' +
-    '<label class="fld">組數<select id="cGroups">' + Array.from({length:P.MAX_GROUPS - 1}, function(_, i){ var n = i + 2; return '<option' + (n === c.groups ? ' selected' : '') + '>' + n + '</option>'; }).join('') + '</select></label></div>' +
-    '<label class="fld" style="margin-top:.6rem">各組題目（一行一組，可以空白）<textarea id="cNames" placeholder="第 1 組的題目&#10;第 2 組的題目&#10;…">' + esc(c.names.join('\n')) + '</textarea><small>投影和學生手機上會顯示目前報告組的題目。</small></label></section>' +
+    '<div class="fld">評量對象<small>' + (isPer() ? '每個人輪流上台，全班幫他打分' : '每組輪流上台，其他組的人幫他們打分') + '</small>' + segBtns('target', [['group', '👥 小組報告（組對組）'], ['person', '🙋 個人報告（人對人）']]) + '</div>' +
+    (isPer() ? '<div class="fld">人數<div style="font-family:var(--serif);font-size:1.6rem;line-height:2.4rem" id="perN">' + c.groups + ' 人</div><small>名單有幾行就是幾人（2～' + P.MAX_PERSONS + ' 人）</small></div></div>' +
+      '<label class="fld" style="margin-top:.6rem">名單（一行一人，照座號順序；姓名或學號，最多 8 個字）<textarea id="cNames" style="min-height:10rem" placeholder="王小明&#10;陳大文&#10;林美玲&#10;…">' + esc(c.names.join('\n')) + '</textarea><small>可以直接從 Excel 複製一欄貼上。學生手機上會列出名單，點自己的名字加入；第 1 行＝1 號。</small></label></section>'
+    : '<label class="fld">組數<select id="cGroups">' + Array.from({length:P.MAX_GROUPS - 1}, function(_, i){ var n = i + 2; return '<option' + (n === c.groups ? ' selected' : '') + '>' + n + '</option>'; }).join('') + '</select></label></div>' +
+      '<label class="fld" style="margin-top:.6rem">各組題目（一行一組，可以空白）<textarea id="cNames" placeholder="第 1 組的題目&#10;第 2 組的題目&#10;…">' + esc(c.names.join('\n')) + '</textarea><small>投影和學生手機上會顯示目前報告組的題目。</small></label></section>') +
     '<section class="card margin"><h2>② 評分量表</h2><p class="lead">每項 1～5 分。先選一組預設，再依需要修改（最多 ' + P.MAX_CRIT + ' 項，項目名稱最多 8 個字）。</p>' +
     '<div class="presets">' + P.PRESETS.map(function(p){ return '<button data-preset="' + p.id + '" aria-pressed="' + (c.preset === p.id) + '">' + p.ic + ' ' + p.n + '</button>'; }).join('') + '</div>' +
     '<div class="crits">' + c.crit.map(function(cr, i){ return '<div class="crit"><span class="no">' + (i + 1) + '</span><input data-ci="' + i + '" data-cf="n" maxlength="8" value="' + esc(cr.n) + '" placeholder="項目名稱" aria-label="項目名稱"><span class="wt"><input data-ci="' + i + '" data-cf="w" inputmode="numeric" maxlength="3" value="' + esc(cr.w) + '" aria-label="權重">%</span><input class="hint" data-ci="' + i + '" data-cf="h" maxlength="30" value="' + esc(cr.h || '') + '" placeholder="給評分者看的說明（選填）" aria-label="說明"><button data-act="delCrit" data-i="' + i + '" aria-label="刪除" ' + (c.crit.length <= 1 ? 'disabled' : '') + '>✕</button></div>'; }).join('') + '</div>' +
     '<div class="go"><button class="btn alt sm" data-act="addCrit" ' + (c.crit.length >= P.MAX_CRIT ? 'disabled' : '') + '>＋ 加一項</button><span class="small">權重合計 <b class="wsum" id="wsum">' + wsum() + '</b>%（不是 100 也沒關係，會自動換算比例）</span></div>' +
     '<p class="small">分數說明：' + P.LEVELS.map(function(l, i){ return (i + 1) + '＝' + l; }).join('、') + '。總分換算成 100 分（全部 5 分＝100）。</p></section>' +
     '<section class="card margin"><h2>③ 評分規則</h2><div class="form">' +
-    '<div class="fld">自己的組<small>不管怎麼選，自評都不會算進同儕分數</small>' + segBtns('self', [[true, '可以自評（另外比較）'], [false, '不能評自己']]) + '</div>' +
+    '<div class="fld">' + U('自己的組', '自己') + '<small>不管怎麼選，自評都不會算進同儕分數</small>' + segBtns('self', [[true, '可以自評（另外比較）'], [false, '不能評自己']]) + '</div>' +
     '<div class="fld">寫評語<small>每人一句優點、一句建議</small>' + segBtns('comments', [[true, '要寫（選填）'], [false, '不用']]) + '</div>' +
     '<div class="fld">報告時間' + segBtns('presSec', [[180, '3 分'], [300, '5 分'], [480, '8 分'], [600, '10 分'], [900, '15 分']]) + '</div>' +
     '<div class="fld">評分時間<small>倒數到 0 自動截止，可以延長</small>' + segBtns('scoreSec', [[60, '60 秒'], [90, '90 秒'], [120, '2 分'], [180, '3 分']]) + '</div>' +
-    '<div class="fld">公布分數' + segBtns('reveal', [['end', '全部評完再公布'], ['each', '每組評完就公布']]) + '</div>' +
-    '<div class="fld">老師分數比重<small>老師沒打分數的組只算同儕</small>' + segBtns('teacherW', [[0, '不算'], [20, '20%'], [30, '30%'], [50, '50%']]) + '</div>' +
-    '<div class="fld">計分單位' + segBtns('mode', [['person', '每人一票'], ['group', '每組一票（組內先平均）']]) + '</div>' +
+    '<div class="fld">公布分數' + segBtns('reveal', [['end', '全部評完再公布'], ['each', U('每組評完就公布', '每人評完就公布')]]) + '</div>' +
+    '<div class="fld">老師分數比重<small>老師沒打分數的' + U('組', '人') + '只算同儕</small>' + segBtns('teacherW', [[0, '不算'], [20, '20%'], [30, '30%'], [50, '50%']]) + '</div>' +
+    (isPer() ? '' : '<div class="fld">計分單位' + segBtns('mode', [['person', '每人一票'], ['group', '每組一票（組內先平均）']]) + '</div>') +
     '<div class="fld">去掉最高與最低<small>份數 5 份以上才會去掉</small>' + segBtns('trim', [[true, '去掉'], [false, '不去掉']]) + '</div>' +
-    '</div><p class="small">老師比重、計分單位、去頭尾在結果頁也能隨時改，分數會重新計算。</p></section>' +
+    '</div><p class="small">老師比重' + U('、計分單位', '') + '、去頭尾在結果頁也能隨時改，分數會重新計算。</p></section>' +
     '<section class="card margin"><h2>④ 上台順序</h2><ol class="order">' + G.order.map(function(g, i){ return '<li><span class="n">' + (i + 1) + '</span>' + gchip(g) + '<b>' + esc(gname(g) + (c.names[g - 1] ? '・' + c.names[g - 1] : '')) + '</b><button data-act="mvUp" data-i="' + i + '" aria-label="往前" ' + (i ? '' : 'disabled') + '>▲</button><button data-act="mvDn" data-i="' + i + '" aria-label="往後" ' + (i < G.order.length - 1 ? '' : 'disabled') + '>▼</button></li>'; }).join('') + '</ol>' +
     '<div class="go"><button class="btn alt sm" data-act="shuffleOrder">🎲 隨機抽順序</button><button class="btn alt sm" data-act="seqOrder">1→' + c.groups + ' 照順序</button></div></section>' +
     '<section class="card margin"><h2>⑤ 讓學生加入</h2>' + joinBoxHtml() + '</section>' +
@@ -402,7 +410,7 @@ function setupView(){
   return h;
 }
 function joinBoxHtml(){
-  if(!NET.want) return '<p class="lead">學生用手機掃 QR code 加入、選自己的組別。</p><div class="go"><button class="btn red" data-act="netOn">📱 開放手機加入</button></div><p class="small">不開也能用：收紙本評分單，再用「紙本代填」輸入。</p>';
+  if(!NET.want) return '<p class="lead">學生用手機掃 QR code 加入、' + U('選自己的組別', '點自己的名字') + '。</p><div class="go"><button class="btn red" data-act="netOn">📱 開放手機加入</button></div><p class="small">不開也能用：收紙本評分單，再用「紙本代填」輸入。</p>';
   var local = !(location.protocol === 'https:' && location.hostname === 'm255525.github.io');
   if(G.locked) return lockPanel(true);
   return '<div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:center"><div class="qr" id="qrJoin"></div><div style="flex:1 1 14rem"><div style="font-weight:900;font-size:1.15rem">🏫 ' + esc(clsName()) + '</div><div class="small">手機掃描，或打開 ' + esc(ONLINE.replace('https://', '')) + '?join 輸入代碼</div><div style="font-family:var(--serif);font-size:2.4rem;letter-spacing:.12em;color:var(--red)">' + esc(NET.code) + '</div>' +
@@ -414,6 +422,11 @@ function joinListHtml(){
   var ms = liveMembers(), by = {};
   ms.forEach(function(m){ (by[m.grp] = by[m.grp] || []).push(m.who || '同學'); });
   if(!ms.length) return '還沒有人加入';
+  if(isPer()){
+    var miss = [], dup = [];
+    for(var i = 1; i <= G.cfg.groups; i++){ var k = (by[i] || []).length; if(!k) miss.push(i); else if(k > 1) dup.push(gname(i)); }
+    return '已加入 <b>' + ms.length + '</b> 人' + (by[0] ? '（' + by[0].length + ' 人還沒點名字）' : '') + (miss.length ? '；還沒加入：' + (miss.length > 15 ? miss.length + ' 人' : miss.join('、') + ' 號') : '；全員到齊 🎉') + (dup.length ? '；<b class="neg">⚠ ' + dup.join('、') + ' 有 2 人以上點同一個名字</b>' : '');
+  }
   return '已加入 <b>' + ms.length + '</b> 人：' + Object.keys(by).sort(function(a, b){ return a - b; }).map(function(g){ return (+g ? gname(g) : '還沒選組') + ' ' + by[g].length + ' 人'; }).join('、');
 }
 
@@ -422,17 +435,17 @@ function runView(){
   var ph = G.ph, phLabel = ph === 1 ? '<span class="ph p1">🎤 報告中</span>' : ph === 2 ? '<span class="ph p2">✍ 評分中</span>' : '<span class="ph p3">✅ 已截止</span>';
   var h = topBar() + '<div class="prog noprint" aria-label="上台順序">' + G.order.map(function(x, i){ return '<button data-act="goto" data-i="' + i + '" class="' + (i === G.cur ? 'cur' : G.done[x] ? 'done' : '') + '" title="' + esc(gname(x) + (c.names[x - 1] ? '・' + c.names[x - 1] : '')) + '">' + x + '</button>'; }).join('') + '<button data-act="toEnd" class="' + '" title="看結果">📊</button></div>' +
     '<div class="run"><div>' +
-    '<section class="stage"><div class="sh"><b>🏫 ' + esc(clsName()) + (c.title ? '・' + esc(c.title) : '') + '</b><span class="small">第 ' + (G.cur + 1) + ' / ' + G.order.length + ' 組上台</span>' + phLabel + '</div>' +
+    '<section class="stage"><div class="sh"><b>🏫 ' + esc(clsName()) + (c.title ? '・' + esc(c.title) : '') + '</b><span class="small">第 ' + (G.cur + 1) + ' / ' + G.order.length + U(' 組', ' 位') + '上台</span>' + phLabel + '</div>' +
     '<div class="sb"><div><h2 class="who" style="color:' + gcol(g) + '">' + gname(g) + '</h2>' + (title ? '<div class="topic">' + esc(title) + '</div>' : '') + '</div><div class="clock" id="clock"></div></div>' +
     (ph >= 2 ? '<div class="meter" id="meter">' + meterHtml() + '</div>' : '') +
     '<div class="ctl noprint">' +
     (ph === 1 ? (G.pres.runAt ? '<button class="btn alt" data-act="presPause">⏸ 暫停計時</button>' : '<button class="btn alt" data-act="presRun">▶ ' + (G.pres.left < c.presSec * 1000 ? '繼續' : '開始') + '報告計時</button>') + '<button class="btn alt sm" data-act="presReset">↺ 重設</button><button class="btn big red" data-act="open">✍ 開放評分</button>' : '') +
     (ph === 2 ? '<button class="btn alt" data-act="addTime">＋30 秒</button><button class="btn big" data-act="stop">⏹ 截止評分</button>' : '') +
-    (ph === 3 ? '<button class="btn alt" data-act="reopen">↩ 重新開放</button>' + (c.reveal === 'each' ? '<button class="btn alt" data-act="showCur">' + (V.showCur ? '🙈 收起分數' : '👀 公布這組分數') + '</button>' : '') + '<button class="btn big red" data-act="next">' + (G.cur < G.order.length - 1 ? '下一組 ▶' : '📊 看結果') + '</button>' : '') +
+    (ph === 3 ? '<button class="btn alt" data-act="reopen">↩ 重新開放</button>' + (c.reveal === 'each' ? '<button class="btn alt" data-act="showCur">' + (V.showCur ? '🙈 收起分數' : U('👀 公布這組分數', '👀 公布這位的分數')) + '</button>' : '') + '<button class="btn big red" data-act="next">' + (G.cur < G.order.length - 1 ? U('下一組 ▶', '下一位 ▶') : '📊 看結果') + '</button>' : '') +
     '<span class="small" style="align-self:center">空白鍵＝下一步</span></div>' +
     (ph === 3 && V.showCur ? '<div class="reveal">' + curRevealHtml(g) + '</div>' : '') + '</section>' +
     teacherPanel(g) + paperPanel(g) +
-    '</div><aside class="side">' + sideRoom() + '<h3>👥 各組評分狀況</h3><div class="mgroups" id="mgroups">' + memberHtml() + '</div></aside></div>' + footer();
+    '</div><aside class="side">' + sideRoom() + '<h3>👥 ' + U('各組評分狀況', '評分狀況') + '</h3><div class="mgroups" id="mgroups">' + memberHtml() + '</div></aside></div>' + footer();
   return h;
 }
 function meterHtml(){
@@ -445,6 +458,13 @@ function meterHtml(){
 }
 function memberHtml(){
   var g = curGrp(), on = {}; onlineIds().forEach(function(id){ on[id] = 1; });
+  if(isPer()){
+    var ms = Object.keys(G.members).filter(function(id){ return on[id] || G.reviews[id + '@' + g]; }).map(function(id){ return {id:id, m:G.members[id]}; }).sort(function(a, b){ return (a.m.grp || 99) - (b.m.grp || 99); });
+    var raters = ms.filter(function(x){ return x.m.grp && (x.m.grp !== g || G.cfg.self); }), done = raters.filter(function(x){ return G.reviews[x.id + '@' + g]; }).length;
+    return '<div class="mg on"><div class="mh"><span>' + (g ? '🎤 ' + esc(gname(g) + (G.cfg.names[g - 1] ? ' ' + G.cfg.names[g - 1] : '')) : '已加入') + '</span><span>' + (g && G.ph >= 2 ? '已評 ' + done + ' / ' + raters.length : ms.length + ' 人') + '</span></div>' +
+      (ms.length ? '<div class="ms">' + ms.map(function(x){ var me = x.m.grp === g; return '<i class="' + (G.reviews[x.id + '@' + g] ? 'ok' : '') + (on[x.id] ? '' : ' off') + '"' + (me ? ' style="outline:2px solid var(--red)"' : '') + '>' + (x.m.grp ? x.m.grp + ' ' : '') + esc(G.cfg.names[x.m.grp - 1] || x.m.who || '同學') + '</i>'; }).join('') + '</div>' : '') + '</div>' +
+      (ms.some(function(x){ return !x.m.grp; }) ? '<p class="small">還沒點名字的人不會出現在評分名單裡。</p>' : '');
+  }
   var by = {};
   Object.keys(G.members).forEach(function(id){ var m = G.members[id]; if(!on[id] && !G.reviews[id + '@' + g]) return; (by[m.grp] = by[m.grp] || []).push({id:id, m:m}); });
   var h = '';
@@ -480,15 +500,15 @@ function teacherPanel(g){
 function paperPanel(g){
   var pd = G.pdraft, papers = Object.keys(G.reviews).filter(function(k){ return G.reviews[k].pres === g && G.reviews[k].kind === 'paper'; });
   var opts = '';
-  for(var i = 1; i <= G.cfg.groups; i++) if(i !== g) opts += '<option value="' + i + '"' + (pd.grp === i ? ' selected' : '') + '>' + gname(i) + '</option>';
+  for(var i = 1; i <= G.cfg.groups; i++) if(i !== g) opts += '<option value="' + i + '"' + (pd.grp === i ? ' selected' : '') + '>' + esc(gname(i) + (isPer() && G.cfg.names[i - 1] ? ' ' + G.cfg.names[i - 1] : '')) + '</option>';
   return '<details class="panel noprint"' + (lsGet('ppOpen') === '1' ? ' open' : '') + ' data-keep="ppOpen"><summary>📄 紙本代填（沒有手機的同學）' + (papers.length ? ' <span class="tag">' + papers.length + ' 份</span>' : '') + '</summary><div class="pb">' +
-    '<label class="fld" style="max-width:16rem">評分者的組別<select id="pGrp"><option value="0">請選擇</option>' + opts + '</select></label>' + scoreRows('psc', pd.s) +
+    '<label class="fld" style="max-width:16rem">' + U('評分者的組別', '評分者是誰') + '<select id="pGrp"><option value="0">請選擇</option>' + opts + '</select></label>' + scoreRows('psc', pd.s) +
     '<div class="go"><button class="btn green" data-act="paperAdd">＋ 加入這一份</button></div>' +
     (papers.length ? '<ul class="notes" style="margin-top:.6rem">' + papers.map(function(k){ var r = G.reviews[k]; return '<li style="padding-left:0">' + gname(r.grp) + '：' + r.s.join('、') + ' <button class="btn alt sm" data-act="paperDel" data-k="' + esc(k) + '">刪除</button></li>'; }).join('') + '</ul>' : '') + '</div></details>';
 }
 function curRevealHtml(g){
   var res = result(), x = res.groups[g - 1];
-  if(!x || x.final == null) return '<p class="lead">這組還沒有收到分數。</p>';
+  if(!x || x.final == null) return '<p class="lead">' + U('這組', '這位') + '還沒有收到分數。</p>';
   return '<div style="display:flex;gap:1.2rem;flex-wrap:wrap;align-items:center"><div><div class="small">得分</div><div class="big">' + f0(x.final) + '</div><div class="small">' + x.n + ' 份' + (x.dropped ? '（已去掉最高最低）' : '') + '</div></div><div style="flex:1 1 16rem">' + cbarsHtml(x.avg, null) + '</div></div>';
 }
 function cbarsHtml(avg, cls){
@@ -514,16 +534,16 @@ function endView(){
   var total = Object.keys(G.reviews).filter(function(k){ var r = G.reviews[k]; return r.kind === 'peer' || r.kind === 'paper'; }).length;
   var people = {}; Object.keys(G.reviews).forEach(function(k){ var r = G.reviews[k]; if(r.kind === 'peer' || r.kind === 'self') people[r.rid] = 1; });
   var h = topBar() + '<section class="card margin"><div style="display:flex;flex-wrap:wrap;gap:.6rem;align-items:center"><h2 style="flex:1 1 14rem">📊 ' + esc(clsName()) + (c.title ? '・' + esc(c.title) : '') + '・結果</h2>' +
-    '<button class="btn alt sm" data-act="backRun">↩ 回到評分</button><button class="btn sm" data-act="printSheets">🖨 印各組回饋單</button><button class="btn alt sm" data-act="csvRaw">⬇ 原始分數 CSV</button><button class="btn alt sm" data-act="csvSum">⬇ 總表 CSV</button></div>' +
-    '<p class="lead">' + c.groups + ' 組・同儕評分 ' + total + ' 份・手機參與 ' + Object.keys(people).length + ' 人。分數＝各項加權平均，換算成 100 分。</p>' +
-    '<div class="form noprint" style="margin-top:.4rem"><div class="fld">老師分數比重' + segBtns('teacherW', [[0, '不算'], [20, '20%'], [30, '30%'], [50, '50%']]) + '</div><div class="fld">計分單位' + segBtns('mode', [['person', '每人一票'], ['group', '每組一票']]) + '</div><div class="fld">去掉最高與最低' + segBtns('trim', [[true, '去掉'], [false, '不去掉']]) + '</div></div></section>';
+    '<button class="btn alt sm" data-act="backRun">↩ 回到評分</button><button class="btn sm" data-act="printSheets">🖨 印' + U('各組', '每人') + '回饋單</button><button class="btn alt sm" data-act="csvRaw">⬇ 原始分數 CSV</button><button class="btn alt sm" data-act="csvSum">⬇ 總表 CSV</button></div>' +
+    '<p class="lead">' + c.groups + U(' 組', ' 人') + '・同儕評分 ' + total + ' 份・手機參與 ' + Object.keys(people).length + ' 人。分數＝各項加權平均，換算成 100 分。</p>' +
+    '<div class="form noprint" style="margin-top:.4rem"><div class="fld">老師分數比重' + segBtns('teacherW', [[0, '不算'], [20, '20%'], [30, '30%'], [50, '50%']]) + '</div>' + (isPer() ? '' : '<div class="fld">計分單位' + segBtns('mode', [['person', '每人一票'], ['group', '每組一票']]) + '</div>') + '<div class="fld">去掉最高與最低' + segBtns('trim', [[true, '去掉'], [false, '不去掉']]) + '</div></div></section>';
   h += '<section class="card"><h2>🏆 排名</h2>' + (res.ranked.length ? '<div class="rank">' + res.ranked.map(function(x){
     return '<div class="rk' + (x.rank === 1 ? ' first' : '') + '"><span class="n">' + x.rank + '</span><div><b style="font-size:1.1rem">' + gchip(x.grp) + ' ' + esc(gname(x.grp)) + '</b> ' + esc(x.title) + '</div><div class="tot">' + f0(x.final) + '<small>總分</small></div>' +
       '<div class="bd">同儕 ' + f0(x.peer) + '（' + x.n + ' 份' + (x.dropped ? '，去掉最高最低' : '') + '）' + (x.teacher != null ? '・老師 ' + f0(x.teacher) + (c.teacherW ? '（佔 ' + c.teacherW + '%）' : '（不計入）') : '') + (x.self != null ? '・自評 ' + f0(x.self) + ' <span class="tag ' + (x.gap >= 10 ? 'amber' : x.gap <= -10 ? 'green' : '') + '">落差 ' + signed(x.gap) + '</span>' : '') + '</div></div>';
   }).join('') + '</div>' : '<p class="lead">還沒有任何分數。</p>') +
     (res.groups.filter(function(x){ return x.final == null; }).length ? '<p class="small">還沒有分數：' + res.groups.filter(function(x){ return x.final == null; }).map(function(x){ return gname(x.grp); }).join('、') + '</p>' : '') + '</section>';
   h += '<section class="card"><h2>💡 全班觀察</h2><div class="insights">' + insightsHtml(res) + '</div></section>';
-  h += '<section class="card"><h2>📋 各組回饋</h2><p class="lead">紅色是這組的平均，灰色虛線是全班平均。評語不顯示是誰寫的。</p><div class="gcards">' + res.groups.map(function(x){ return gcardHtml(x, res, notes); }).join('') + '</div></section>';
+  h += '<section class="card"><h2>📋 ' + U('各組回饋', '每人回饋') + '</h2><p class="lead">紅色是' + U('這組', '這位') + '的平均，灰色虛線是全班平均。評語不顯示是誰寫的。</p><div class="gcards">' + res.groups.map(function(x){ return gcardHtml(x, res, notes); }).join('') + '</div></section>';
   h += '<details class="panel noprint"><summary>🔍 評分者分析（老師看就好，不建議投影）</summary><div class="pb">' + ratersHtml(res) + '</div></details>';
   h += '<div class="go noprint"><button class="btn alt" data-act="again">🔁 同一班再開一場（代碼不變）</button><button class="btn alt" data-act="newSetup">＋ 這間教室開新的互評</button></div>' + footer();
   return h;
@@ -538,10 +558,10 @@ function insightsHtml(res){
   var gaps = res.groups.filter(function(x){ return x.gap != null; });
   if(gaps.length){
     var hi = gaps.filter(function(x){ return x.gap >= 10; }), lo = gaps.filter(function(x){ return x.gap <= -10; });
-    out.push(['🪞 自評 vs 同學評', '有自評的 ' + gaps.length + ' 組，平均落差 ' + signed(P.mean(gaps.map(function(x){ return x.gap; }))) + ' 分。' + (hi.length ? '自己評得比同學高 10 分以上：' + hi.map(function(x){ return gname(x.grp); }).join('、') + '。' : '') + (lo.length ? '對自己比較嚴格：' + lo.map(function(x){ return gname(x.grp); }).join('、') + '。' : '')]);
+    out.push(['🪞 自評 vs 同學評', '有自評的 ' + gaps.length + U(' 組', ' 人') + '，平均落差 ' + signed(P.mean(gaps.map(function(x){ return x.gap; }))) + ' 分。' + (hi.length ? '自己評得比同學高 10 分以上：' + hi.map(function(x){ return gname(x.grp); }).join('、') + '。' : '') + (lo.length ? '對自己比較嚴格：' + lo.map(function(x){ return gname(x.grp); }).join('、') + '。' : '')]);
   }
   var sds = res.groups.filter(function(x){ return x.n >= 3; }).sort(function(a, b){ return b.sd - a.sd; });
-  if(sds.length) out.push(['🗣 意見最分歧', gname(sds[0].grp) + '（標準差 ' + f0(sds[0].sd) + ' 分）同學的看法差最多，可以請大家分享為什麼。']);
+  if(sds.length) out.push(['🗣 意見最分歧', gname(sds[0].grp) + '（標準差 ' + f0(sds[0].sd) + ' 分）大家的看法差最多，可以請大家分享為什麼。']);
   var gl = res.raters.groupLean.filter(function(x){ return x.n >= 1; });
   if(gl.length >= 2){
     gl.sort(function(a, b){ return b.lean - a.lean; });
@@ -568,8 +588,8 @@ function gcardHtml(x, res, notes){
 function ratersHtml(res){
   var list = res.raters.list.slice().sort(function(a, b){ return (b.flags.length - a.flags.length) || (a.grp - b.grp); });
   if(!list.length) return '<p class="lead">還沒有同儕評分。</p>';
-  return '<p class="small">寬嚴＝這個人給的分數平均比同一場其他人高（＋）或低（－）幾分（100 分制），同一場要有 3 份以上才算。每人至少評 2 組才會標「全部給滿分」等提醒。提醒只是參考，不代表一定亂評。</p><div class="tw"><table class="t"><thead><tr><th>評分者</th><th>組別</th><th>評了幾組</th><th>寬嚴</th><th>提醒</th></tr></thead><tbody>' +
-    list.map(function(r){ return '<tr><td>' + esc(r.kind === 'paper' ? '紙本' : r.who || '（沒填名字）') + '</td><td>' + gname(r.grp) + '</td><td class="n">' + r.n + '</td><td class="n ' + (r.lean >= 12 ? 'neg' : '') + '">' + signed(r.lean) + '</td><td>' + r.flags.map(function(f){ return '<span class="tag amber">' + f + '</span>'; }).join('') + '</td></tr>'; }).join('') + '</tbody></table></div>';
+  return '<p class="small">寬嚴＝這個人給的分數平均比同一場其他人高（＋）或低（－）幾分（100 分制），同一場要有 3 份以上才算。每人至少評 2 ' + U('組', '位') + '才會標「全部給滿分」等提醒。提醒只是參考，不代表一定亂評。</p><div class="tw"><table class="t"><thead><tr><th>評分者</th><th>' + U('組別', '座號') + '</th><th>評了幾組</th><th>寬嚴</th><th>提醒</th></tr></thead><tbody>' +
+    list.map(function(r){ return '<tr><td>' + esc(r.kind === 'paper' ? '紙本' : (isPer() && G.cfg.names[r.grp - 1]) || r.who || '（沒填名字）') + '</td><td>' + gname(r.grp) + '</td><td class="n">' + r.n + '</td><td class="n ' + (r.lean >= 12 ? 'neg' : '') + '">' + signed(r.lean) + '</td><td>' + r.flags.map(function(f){ return '<span class="tag amber">' + f + '</span>'; }).join('') + '</td></tr>'; }).join('') + '</tbody></table></div>';
 }
 
 /* ---------- 列印：回饋單、紙本評分單 ---------- */
@@ -584,9 +604,9 @@ function sheetsHtml(){
   return res.groups.map(function(x){
     var plus = notesOf(x, notes, '+'), minus = notesOf(x, notes, '-');
     return '<div class="psheet"><h1>' + esc(c.title || '同儕互評') + '・回饋單</h1><div class="meta">' + date + '　' + esc(clsName()) + '　' + gname(x.grp) + (x.title ? '・' + esc(x.title) : '') + '</div>' +
-      '<div class="two"><div>' + radar(x.avg, res.classAvg, 200) + '<div style="font-size:10px;color:#555;text-align:center">紅：本組　灰虛線：全班平均</div></div><div><div>總分</div><div class="bigs">' + f0(x.final) + '</div>' +
-      '<div>' + (x.rank ? '全班第 ' + x.rank + ' 名（共 ' + res.ranked.length + ' 組）・' : '') + '同儕 ' + f0(x.peer) + '（' + x.n + ' 份）' + (x.teacher != null ? '・老師 ' + f0(x.teacher) : '') + (x.self != null ? '・自評 ' + f0(x.self) : '') + '</div>' +
-      '<table><thead><tr><th>評分項目</th><th>權重</th><th>本組</th><th>全班平均</th>' + (x.self != null ? '<th>自評</th>' : '') + (x.teacherS ? '<th>老師</th>' : '') + '</tr></thead><tbody>' +
+      '<div class="two"><div>' + radar(x.avg, res.classAvg, 200) + '<div style="font-size:10px;color:#555;text-align:center">紅：' + U('本組', '本人') + '　灰虛線：全班平均</div></div><div><div>總分</div><div class="bigs">' + f0(x.final) + '</div>' +
+      '<div>' + (x.rank ? '全班第 ' + x.rank + ' 名（共 ' + res.ranked.length + U(' 組', ' 人') + '）・' : '') + '同儕 ' + f0(x.peer) + '（' + x.n + ' 份）' + (x.teacher != null ? '・老師 ' + f0(x.teacher) : '') + (x.self != null ? '・自評 ' + f0(x.self) : '') + '</div>' +
+      '<table><thead><tr><th>評分項目</th><th>權重</th><th>' + U('本組', '本人') + '</th><th>全班平均</th>' + (x.self != null ? '<th>自評</th>' : '') + (x.teacherS ? '<th>老師</th>' : '') + '</tr></thead><tbody>' +
       c.crit.map(function(cr, i){ return '<tr><td>' + esc(cr.n) + '</td><td class="c">' + cr.w + '%</td><td class="c"><b>' + f1(x.avg[i]) + '</b></td><td class="c">' + f1(res.classAvg[i]) + '</td>' + (x.self != null ? '<td class="c">' + f1(x.selfAvg[i]) + '</td>' : '') + (x.teacherS ? '<td class="c">' + x.teacherS[i] + '</td>' : '') + '</tr>'; }).join('') + '</tbody></table></div></div>' +
       '<h3 style="font-size:14px;margin-top:10px">👍 同學說的優點</h3>' + (plus.length ? '<ul>' + plus.map(function(n){ return '<li>' + esc(n.t) + (n.k === 'self' ? '（自評）' : '') + '</li>'; }).join('') + '</ul>' : '<p>（沒有）</p>') +
       '<h3 style="font-size:14px">💡 同學給的建議</h3>' + (minus.length ? '<ul>' + minus.map(function(n){ return '<li>' + esc(n.t) + (n.k === 'self' ? '（自評）' : '') + '</li>'; }).join('') + '</ul>' : '<p>（沒有）</p>') +
@@ -596,13 +616,13 @@ function sheetsHtml(){
 function blankHtml(){
   var c = G.cfg, rows = '';
   for(var i = 1; i <= c.groups; i++) rows += '<tr><td>' + gname(i) + (c.names[i - 1] ? '<br><small>' + esc(c.names[i - 1]) + '</small>' : '') + '</td>' + c.crit.map(function(){ return '<td></td>'; }).join('') + (c.comments ? '<td style="width:30%"></td>' : '') + '</tr>';
-  return '<div class="psheet"><h1>' + esc(c.title || '同儕互評') + '・評分單</h1><div class="meta">' + esc(clsName()) + '　評分者：＿＿＿＿＿＿＿＿　我的組別：第＿＿組　（自己的組' + (c.self ? '可以自評，另外計算' : '不用評') + '）</div>' +
+  return '<div class="psheet"><h1>' + esc(c.title || '同儕互評') + '・評分單</h1><div class="meta">' + esc(clsName()) + '　評分者：＿＿＿＿＿＿＿＿　' + U('我的組別：第＿＿組', '我的座號：＿＿號') + '　（' + U('自己的組', '自己') + (c.self ? '可以自評，另外計算' : '不用評') + '）</div>' +
     '<div>每項填 1～5 分：' + P.LEVELS.map(function(l, i){ return (i + 1) + '＝' + l; }).join('　') + '</div>' +
-    '<table><thead><tr><th style="width:16%">報告組</th>' + c.crit.map(function(cr){ return '<th>' + esc(cr.n) + '<br><small>' + cr.w + '%</small></th>'; }).join('') + (c.comments ? '<th>優點／建議</th>' : '') + '</tr></thead><tbody>' + rows + '</tbody></table>' +
+    '<table><thead><tr><th style="width:16%">' + U('報告組', '報告者') + '</th>' + c.crit.map(function(cr){ return '<th>' + esc(cr.n) + '<br><small>' + cr.w + '%</small></th>'; }).join('') + (c.comments ? '<th>優點／建議</th>' : '') + '</tr></thead><tbody>' + rows + '</tbody></table>' +
     '<table style="margin-top:8px"><tbody>' + c.crit.map(function(cr){ return '<tr><td style="width:18%"><b>' + esc(cr.n) + '</b></td><td>' + esc(cr.h || '') + '</td></tr>'; }).join('') + '</tbody></table></div>';
 }
 function csvRaw(){
-  var c = G.cfg, rows = [['報告組', '題目', '評分者', '評分者組別', '類型'].concat(c.crit.map(function(x){ return x.n + '(' + x.w + '%)'; }), ['加權平均(1-5)', '換算100分', '優點', '建議'])];
+  var c = G.cfg, rows = [[U('報告組', '報告者座號'), U('題目', '報告者'), '評分者', U('評分者組別', '評分者座號'), '類型'].concat(c.crit.map(function(x){ return x.n + '(' + x.w + '%)'; }), ['加權平均(1-5)', '換算100分', '優點', '建議'])];
   var W = P.weights(c.crit), kindN = {peer:'同儕', self:'自評', teacher:'老師', paper:'紙本'};
   reviewList().concat(allNotes()).sort(function(a, b){ return a.pres - b.pres || a.grp - b.grp; }).forEach(function(r){
     var ws = r.s ? P.wscore(r.s, W) : null;
@@ -611,7 +631,7 @@ function csvRaw(){
   return rows.map(function(r){ return r.map(csvCell).join(','); }).join('\n');
 }
 function csvSum(){
-  var res = result(), c = G.cfg, rows = [['名次', '組別', '題目', '總分', '同儕分', '同儕份數', '老師分', '自評分', '自評落差'].concat(c.crit.map(function(x){ return x.n + '平均'; }))];
+  var res = result(), c = G.cfg, rows = [['名次', U('組別', '座號'), U('題目', '姓名'), '總分', '同儕分', '同儕份數', '老師分', '自評分', '自評落差'].concat(c.crit.map(function(x){ return x.n + '平均'; }))];
   res.groups.slice().sort(function(a, b){ return (a.rank || 99) - (b.rank || 99); }).forEach(function(x){
     rows.push([x.rank || '', gname(x.grp), x.title, f0(x.final), f0(x.peer), x.n, f0(x.teacher), f0(x.self), x.gap == null ? '' : x.gap].concat(x.avg.map(function(v){ return v == null ? '' : v.toFixed(2); })));
   });
@@ -631,11 +651,20 @@ function render(){
   if(G && !V.home && NET.want && $('qrJoin')) drawQR('qrJoin', G.stage === 'run' ? 130 : 170);
   T.tick();
 }
+function syncOrder(){ var n = G.cfg.groups; G.order = G.order.filter(function(x){ return x <= n; }); for(var i = 1; i <= n; i++) if(G.order.indexOf(i) < 0) G.order.push(i); }
 function readCfg(){
   var c = G.cfg;
   var t = $('cTitle'); if(t) c.title = t.value.trim().slice(0, 30);
-  var n = $('cNames'); if(n) c.names = n.value.split(/\r?\n/).map(function(s){ return P.cleanNote(s, 40); }).slice(0, c.groups);
-  lsSet('cfg', JSON.stringify({preset:c.preset, crit:c.crit, self:c.self, teacherW:c.teacherW, trim:c.trim, mode:c.mode, comments:c.comments, presSec:c.presSec, scoreSec:c.scoreSec, reveal:c.reveal}));
+  var n = $('cNames');
+  if(n && c.target === 'person'){
+    var lines = n.value.split(/\r?\n/).map(function(s){ return P.cleanWho(s); });
+    while(lines.length && !lines[lines.length - 1]) lines.pop();
+    lines = lines.slice(0, P.MAX_PERSONS);
+    var cnt = Math.max(2, lines.length);
+    c.names = lines;
+    if(cnt !== c.groups){ c.groups = cnt; syncOrder(); var pn = $('perN'); if(pn) pn.textContent = cnt + ' 人'; T.push(); }
+  } else if(n) c.names = n.value.split(/\r?\n/).map(function(s){ return P.cleanNote(s, 40); }).slice(0, c.groups);
+  lsSet('cfg', JSON.stringify({target:c.target, preset:c.preset, crit:c.crit, self:c.self, teacherW:c.teacherW, trim:c.trim, mode:c.mode, comments:c.comments, presSec:c.presSec, scoreSec:c.scoreSec, reveal:c.reveal}));
   saveSoon();
 }
 document.addEventListener('click', function(e){
@@ -648,6 +677,12 @@ document.addEventListener('click', function(e){
   if(ds.cfg && G){
     var v = ds.v === 'true' ? true : ds.v === 'false' ? false : /^\d+$/.test(ds.v) ? +ds.v : ds.v;
     if(G.stage === 'setup') readCfg();
+    if(ds.cfg === 'target' && v !== G.cfg.target){
+      if(G.stage !== 'setup'){ toast('評量對象只能在開始前切換'); return; }
+      G.cfg.target = v; G.cfg.names = []; G.cfg.groups = v === 'person' ? Math.max(2, G.cfg.groups) : Math.min(G.cfg.groups, P.MAX_GROUPS);
+      if(v === 'person') G.cfg.mode = 'person';
+      syncOrder(); G.members = {}; readCfg(); T.push(); rosterSoon(); render(); return;
+    }
     G.cfg[ds.cfg] = v; if(ds.cfg === 'presSec' && G.stage === 'setup') G.pres.left = v * 1000;
     readCfg(); if(ds.cfg === 'self' || ds.cfg === 'comments') T.push(); render(); return;
   }
@@ -676,6 +711,7 @@ document.addEventListener('change', function(e){
   var t = e.target; if(JOIN || !G) return;
   if(t.id === 'cGroups'){ readCfg(); var n = +t.value; G.cfg.groups = n; G.cfg.names = G.cfg.names.slice(0, n); G.order = G.order.filter(function(x){ return x <= n; }); for(var i = 1; i <= n; i++) if(G.order.indexOf(i) < 0) G.order.push(i); readCfg(); T.push(); render(); }
   if(t.id === 'pGrp') G.pdraft.grp = +t.value;
+  if(t.id === 'cNames' && G.cfg.target === 'person'){ readCfg(); rosterSoon(); render(); }
   if(t.dataset && t.dataset.cf === 'n'){ t.value = P.cleanCrit(t.value) || ''; }
 });
 document.addEventListener('toggle', function(e){ var d = e.target; if(d.dataset && d.dataset.keep) lsSet(d.dataset.keep, d.open ? '1' : '0'); }, true);
@@ -734,9 +770,10 @@ var ACT = {
     if(bad){ toast('有評分項目沒有名稱'); return; }
     var names = {}; G.cfg.crit.forEach(function(c){ names[c.n] = (names[c.n] || 0) + 1; });
     if(Object.keys(names).some(function(k){ return names[k] > 1; })){ toast('評分項目名稱不能重複'); return; }
+    if(G.cfg.target === 'person' && G.cfg.names.filter(function(x){ return x; }).length < 2){ toast('請先貼上名單（至少 2 人）'); return; }
     G.stage = 'run'; G.cur = 0; G.ph = 1; G.pres = {left:G.cfg.presSec * 1000, runAt:0}; saveG(); ensureNet(); T.push(); rubricSoon(100); render(); window.scrollTo(0, 0);
   },
-  goto:function(el){ var i = +el.dataset.i; if(i === G.cur) return; if(G.ph === 2){ V.gotoI = i; openModal('<h2>還在評分中</h2><p>換組會先截止目前這組的評分。</p><div class="stack"><button class="btn red" data-act="gotoYes">截止並換組</button><button class="btn alt" data-act="close">取消</button></div>'); return; } T.go(i); },
+  goto:function(el){ var i = +el.dataset.i; if(i === G.cur) return; if(G.ph === 2){ V.gotoI = i; openModal('<h2>還在評分中</h2><p>' + U('換組會先截止目前這組的評分。', '換人會先截止目前這位的評分。') + '</p><div class="stack"><button class="btn red" data-act="gotoYes">截止並換組</button><button class="btn alt" data-act="close">取消</button></div>'); return; } T.go(i); },
   gotoYes:function(){ closeModal(); T.go(V.gotoI); },
   presRun:function(){ G.pres.runAt = Date.now(); saveG(); render(); },
   presPause:function(){ G.pres.left = presLeft(); G.pres.runAt = 0; saveG(); render(); },
@@ -748,7 +785,7 @@ var ACT = {
   tclear:function(){ var g = curGrp(); delete G.reviews['T@' + g]; delete G.tdraft[g]; saveG(); render(); },
   paperAdd:function(){
     var g = curGrp(), pd = G.pdraft; pd.grp = +($('pGrp') || {}).value || 0;
-    if(!pd.grp){ toast('請選評分者的組別'); return; }
+    if(!pd.grp){ toast(U('請選評分者的組別', '請選評分者是誰')); return; }
     if(!G.cfg.crit.every(function(_, i){ return pd.s[i]; })){ toast('每一項都要點分數'); return; }
     G.paperN++; G.reviews['P' + G.paperN + '@' + g] = {rid:'P' + G.paperN, who:'紙本', grp:pd.grp, pres:g, kind:'paper', s:pd.s.slice(0, G.cfg.crit.length), at:Date.now()};
     G.pdraft = {grp:pd.grp, s:[]}; saveG(); render(); toast('已加入一份紙本評分');
@@ -822,7 +859,7 @@ function install(){
    學生（手機）端
    ===================================================================== */
 var S = {
-  code:'', who:'', grp:0, tid:'', room:'', T:null, until:0, gid:0, rub:{}, titles:{}, mine:{}, last:0, draft:null, closed:0, askWho:false, pickGrp:false, whoSent:false, flash:'',
+  code:'', who:'', grp:0, tid:'', room:'', roster:{}, T:null, until:0, gid:0, rub:{}, titles:{}, mine:{}, last:0, draft:null, closed:0, askWho:false, pickGrp:false, whoSent:false, flash:'',
   myName:function(){
     var t = S.T, m = S.last && S.mine[S.last];
     if(t && m && m.s && m.s.length === t.nc) return P.encS({k:'score', gid:S.gid, grp:S.grp, pres:S.last, s:m.s});
@@ -845,6 +882,7 @@ var S = {
       S.gid = t.gid; S.rub = {}; S.titles = {}; S.mine = lsJson('mine.' + S.code + '.' + t.gid, {}); S.last = 0; S.draft = null;
       if(S.grp > t.groups) S.grp = 0;
     }
+    if(prev && prev.person !== t.person){ S.grp = 0; S.pickGrp = false; lsSet('grp.' + S.code, '0'); S.last = 0; }
     if(t.ph === 2) S.until = Date.now() + t.secs * 1000;
     if(t.ph === 2 && (!prev || prev.ph !== 2 || prev.cur !== t.cur) && S.grp && (S.grp !== t.cur || t.self)){ snd('open'); try{ navigator.vibrate && navigator.vibrate(120); }catch(e){} }
     if(!S.whoSent && S.who && NET.status === 'on'){ S.whoSent = true; queueChats([P.encWho(S.who)], 'who'); }
@@ -855,12 +893,16 @@ var S = {
     if(S.tid && m.id !== S.tid) return;
     var r = P.decRubric(m.text);
     if(r){ if(r.gid !== S.gid && S.gid) return; if(S.rub.n !== r.n) S.rub = {n:r.n, parts:{}}; S.rub.parts[r.i] = r.names; renderStu(); return; }
+    var ro = P.decRoster(m.text);
+    if(ro){ if(S.gid && ro.gid !== S.gid) return; if(S.roster.n !== ro.n || S.roster.gid !== ro.gid) S.roster = {n:ro.n, gid:ro.gid, parts:{}}; S.roster.parts[ro.i] = ro.names; renderStu(); return; }
     var rn = P.decRoomName(m.text);
     if(rn){ S.room = rn; lsSet('room.' + S.code, rn); renderStu(); return; }
     var tt = P.decTitle(m.text);
     if(tt && (!S.gid || tt.gid === S.gid)){ S.titles[tt.grp] = tt.title; renderStu(); }
   },
   sendState:function(){ setName(S.myName()); },
+  rosterNames:function(){ var r = S.roster, out = []; if(!r.n) return out; for(var i = 1; i <= r.n; i++) out = out.concat(r.parts[i] || []); return out; },
+  rosterDone:function(){ var r = S.roster; if(!r.n) return false; for(var i = 1; i <= r.n; i++) if(!r.parts[i]) return false; return true; },
   saveMine:function(){ lsSet('mine.' + S.code + '.' + S.gid, JSON.stringify(S.mine)); },
   curDraft:function(){
     var t = S.T; if(!t || !t.cur) return null;
@@ -872,7 +914,11 @@ var S = {
     if(t.id === 'nPlus') d.plus = t.value; if(t.id === 'nMinus') d.minus = t.value;
   },
   click:function(el, ds){
-    if(ds.grp){ S.grp = +ds.grp; lsSet('grp.' + S.code, String(S.grp)); S.pickGrp = false; S.sendState(); renderStu(); return true; }
+    if(ds.grp){
+      S.grp = +ds.grp; lsSet('grp.' + S.code, String(S.grp)); S.pickGrp = false;
+      if(isPer()){ var nm = S.rosterNames()[S.grp - 1]; S.who = P.cleanWho(nm || S.grp + '號'); S.whoSent = true; queueChats([P.encWho(S.who)], 'who'); }
+      S.sendState(); renderStu(); return true;
+    }
     if(ds.sc){ var a = ds.sc.split(','), d = S.curDraft(); if(d){ d.s[+a[0]] = +a[1]; renderStu(); } return true; }
     var act = ds.act;
     if(act === 'saveWho'){ var w = P.cleanWho(($('whoIn') || {}).value); if(!w){ toast('請輸入學號或姓名'); return true; } S.who = w; lsSet('who', w); S.askWho = false; S.whoSent = false; if(NET.status === 'on'){ S.whoSent = true; queueChats([P.encWho(w)], 'who'); } renderStu(); return true; }
@@ -903,13 +949,17 @@ function renderStu(){
     h += '<section class="card margin"><h2>📱 加入互評</h2><p class="lead">輸入老師投影上的 6 碼代碼。</p><div class="amtin"><input id="codeIn" maxlength="6" autocapitalize="characters" autocomplete="off" placeholder="例如 AB3K7Q" style="text-align:center;letter-spacing:.2em;text-transform:uppercase"><button class="btn red" data-act="joinCode">加入</button></div></section>';
   } else if(S.closed){
     h += '<section class="card"><h2>' + (S.closed === 4005 ? (S.T && S.T.locked ? '🔒 這個教室已關閉加入' : '🚫 你已被請出這個教室') : '🚪 教室已關閉，或老師還沒開放') + '</h2>' + (S.room ? '<p style="font-weight:900">🏫 ' + esc(S.room) + '</p>' : '') + '<p class="lead">' + (S.closed === 4005 && S.T && S.T.locked ? '老師暫停讓新同學加入。請跟老師確認，等老師開放後再按「再試一次」。' : '請看老師投影上的代碼是不是 <b>' + esc(S.code) + '</b>。') + '</p><div class="go"><button class="btn red" data-act="retry">再試一次</button><button class="btn alt" data-act="leave">輸入新代碼</button></div></section>';
-  } else if(S.askWho){
+  } else if(S.askWho && !isPer()){
     h += '<section class="card margin"><h2>👤 你是誰？</h2><p class="lead">填學號或姓名（最多 8 個字），只有老師看得到。不要填身分證字號或電話。</p><div class="amtin"><input id="whoIn" maxlength="8" value="' + esc(S.who) + '" placeholder="學號或姓名"><button class="btn red" data-act="saveWho">下一步</button></div></section>';
+  } else if(isPer() && (!S.grp || S.pickGrp)){
+    var pn = S.T.groups, rn = S.rosterNames(), full = S.rosterDone();
+    h += '<section class="card margin"><h2>🙋 你是誰？</h2><p class="lead">點你自己的名字。' + (S.T.self ? '輪到你上台時可以自評（不算進同學給的分數）。' : '輪到你上台時不用評分。') + (full ? '' : '<br><small>名單載入中…也可以先點座號。</small>') + '</p><div class="tpick per">' +
+      Array.from({length:pn}, function(_, i){ return '<button data-grp="' + (i + 1) + '" style="background:' + gcol(i + 1) + '" aria-pressed="' + (S.grp === i + 1) + '"><small>' + (i + 1) + ' 號</small>' + esc(rn[i] || '') + '</button>'; }).join('') + '</div></section>';
   } else if(!S.grp || S.pickGrp){
     var n = S.T ? S.T.groups : 0;
     h += '<section class="card margin"><h2>👥 你是第幾組？</h2>' + (n ? '<p class="lead">選你自己的組別。自己的組報告時' + (S.T.self ? '可以自評（不算進同學給的分數）' : '不用評分') + '。</p><div class="tpick">' + Array.from({length:n}, function(_, i){ return '<button data-grp="' + (i + 1) + '" style="background:' + gcol(i + 1) + '" aria-pressed="' + (S.grp === i + 1) + '">' + gname(i + 1) + '</button>'; }).join('') + '</div>' : '<p class="lead">' + (NET.status === 'on' ? '等老師開放…' : '連線中…') + '</p>') + '</section>';
   } else {
-    h += '<div class="mychip">' + gchip(S.grp) + '<span>' + esc(S.who) + '・' + gname(S.grp) + '</span><span class="sp"><button data-act="editWho">改名字</button>　<button data-act="changeGrp">換組</button></span></div>' + stuLive();
+    h += '<div class="mychip">' + gchip(S.grp) + '<span>' + esc(S.who) + '・' + gname(S.grp) + '</span><span class="sp">' + (isPer() ? '' : '<button data-act="editWho">改名字</button>　') + '<button data-act="changeGrp">' + U('換組', '不是我') + '</button></span></div>' + stuLive();
   }
   h += '<p class="foot">只有老師看得到你的分數與評語・<a href="#" data-act="warn">使用警語</a></p></div>';
   // 重畫時保留還沒送出的代碼／名字輸入（轉播站訊息隨時會觸發重畫）
@@ -920,20 +970,20 @@ function renderStu(){
 function stuLive(){
   var t = S.T;
   if(!t) return '<section class="card"><p class="bigstate">' + (NET.status === 'on' ? '等老師開始…' : '連線中…') + '</p></section>';
-  if(t.ph === 9) return '<section class="card"><p class="bigstate">🎉 互評結束<br>謝謝你認真給回饋！</p><p class="lead" style="text-align:center">你這次評了 ' + Object.keys(S.mine).length + ' 組。</p></section>';
-  if(t.ph === 0 || !t.cur) return '<section class="card"><p class="bigstate">✅ 已加入<br>等老師開始</p><p class="lead" style="text-align:center">待會每組報告完，這裡會出現評分表。</p></section>';
+  if(t.ph === 9) return '<section class="card"><p class="bigstate">🎉 互評結束<br>謝謝你認真給回饋！</p><p class="lead" style="text-align:center">你這次評了 ' + Object.keys(S.mine).length + U(' 組', ' 位') + '。</p></section>';
+  if(t.ph === 0 || !t.cur) return '<section class="card"><p class="bigstate">✅ 已加入<br>等老師開始</p><p class="lead" style="text-align:center">待會' + U('每組', '每個人') + '報告完，這裡會出現評分表。</p></section>';
   var own = t.cur === S.grp, title = S.titles[t.cur] || '', head = '<section class="card margin"><div class="small">現在上台</div><h2 style="color:' + gcol(t.cur) + ';font-size:1.6rem">' + gname(t.cur) + '</h2>' + (title ? '<div style="font-weight:700">' + esc(title) + '</div>' : '') + '</section>';
-  if(own && !t.self) return head + '<section class="card"><p class="bigstate">' + (t.ph === 1 ? '🎤 輪到你們上台<br>加油！' : '這是你們組<br>不用評分') + '</p></section>';
-  if(t.ph === 1) return head + '<section class="card"><p class="bigstate">🎤 報告中<br>' + (own ? '你們上台，結束後可以自評' : '仔細聽，等一下要評分') + '</p></section>';
+  if(own && !t.self) return head + '<section class="card"><p class="bigstate">' + (t.ph === 1 ? U('🎤 輪到你們上台<br>加油！', '🎤 輪到你上台<br>加油！') : U('這是你們組<br>不用評分', '這是你自己<br>不用評分')) + '</p></section>';
+  if(t.ph === 1) return head + '<section class="card"><p class="bigstate">🎤 報告中<br>' + (own ? U('你們上台，結束後可以自評', '你上台，結束後可以自評') : '仔細聽，等一下要評分') + '</p></section>';
   var mine = S.mine[t.cur];
-  if(t.ph === 3) return head + '<section class="card"><p class="bigstate">⏹ 評分已截止</p>' + (mine ? '<p class="lead" style="text-align:center">你給的分數：' + mine.s.join('、') + '</p>' : '<p class="lead" style="text-align:center">這組你沒有送出評分。</p>') + '</section>';
+  if(t.ph === 3) return head + '<section class="card"><p class="bigstate">⏹ 評分已截止</p>' + (mine ? '<p class="lead" style="text-align:center">你給的分數：' + mine.s.join('、') + '</p>' : '<p class="lead" style="text-align:center">' + U('這組', '這位') + '你沒有送出評分。</p>') + '</section>';
   // 評分中
   var names = S.names();
   if(!names) return head + '<section class="card"><p class="bigstate">✍ 開放評分了<br><small class="small">正在接收評分項目…</small></p></section>';
   var d = S.curDraft(), sent = !!mine;
   var h = head + (S.flash && sent ? '<div class="alert ok">' + esc(S.flash) + '</div>' : '') +
     '<section class="card">' + (own ? '<div class="alert warn">🪞 這是自評，不會算進同學給的分數</div>' : '') +
-    '<div style="display:flex;align-items:center"><h2 style="flex:1">✍ ' + (own ? '自評' : '幫這組評分') + '</h2><span class="clock" style="font-size:1.6rem" id="scd"></span></div>' +
+    '<div style="display:flex;align-items:center"><h2 style="flex:1">✍ ' + (own ? '自評' : U('幫這組評分', '幫他評分')) + '</h2><span class="clock" style="font-size:1.6rem" id="scd"></span></div>' +
     names.map(function(nm, i){ return '<div class="sitem"><div class="q"><span class="no">' + (i + 1) + '</span>' + esc(nm) + (d.s[i] ? '<small>' + P.LEVELS[d.s[i] - 1] + '</small>' : '') + '</div><div class="pick5">' + [1, 2, 3, 4, 5].map(function(v){ return '<button data-sc="' + i + ',' + v + '" aria-pressed="' + (d.s[i] === v) + '">' + v + '<small>' + P.LEVELS[v - 1] + '</small></button>'; }).join('') + '</div></div>'; }).join('') +
     (t.comments ? '<div class="sitem"><label class="fld">👍 一句優點（選填）<input class="notein" id="nPlus" maxlength="50" value="' + esc(d.plus) + '" placeholder="例如：例子很生活化"></label><label class="fld" style="margin-top:.5rem">💡 一句建議（選填）<input class="notein" id="nMinus" maxlength="50" value="' + esc(d.minus) + '" placeholder="例如：結論可以再清楚一點"></label><p class="small">對事不對人，具體說哪裡好、哪裡可以更好。</p></div>' : '') +
     '<div class="sendbar"><button class="btn red" data-act="submit">' + (sent ? '🔁 更新評分' : '📨 送出評分') + '</button></div></section>';

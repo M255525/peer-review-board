@@ -27,10 +27,10 @@ P.PRESETS.forEach(p => {
 
 // 2. 老師狀態
 for (let i = 0; i < 4000; i++) {
-  const t = { gid: 10 + (i % 90), groups: 2 + (i % 19), cur: i % 21, ph: [0, 1, 2, 3, 9][i % 5], nc: 1 + (i % 6), self: !!(i & 1), comments: !!(i & 2), locked: !!(i & 4), secs: (i * 37) % 1000 };
+  const t = { gid: 10 + (i % 90), groups: 2 + (i % 59), cur: i % 21, ph: [0, 1, 2, 3, 9][i % 5], nc: 1 + (i % 6), self: !!(i & 1), comments: !!(i & 2), locked: !!(i & 4), person: !!(i & 8), secs: (i * 37) % 1000 };
   const s = P.encT(t); safe(s, 'T');
   const d = P.decT(s);
-  ok(d && d.gid === t.gid && d.groups === t.groups && d.cur === t.cur && d.ph === t.ph && d.nc === t.nc && d.self === t.self && d.comments === t.comments && d.locked === t.locked && d.secs === t.secs, 'T 還原 ' + s);
+  ok(d && d.gid === t.gid && d.groups === t.groups && d.cur === t.cur && d.ph === t.ph && d.nc === t.nc && d.self === t.self && d.comments === t.comments && d.locked === t.locked && d.person === t.person && d.secs === t.secs, 'T 還原 ' + s);
 }
 // 3. 學生狀態（窮舉組別與部分分數組合）
 for (let gid = 10; gid < 100; gid += 7) for (let grp = 0; grp <= 20; grp++) {
@@ -67,6 +67,17 @@ ok(P.encRoomName('一二三四五六七八九十一二三四五六七八九十�
 ok(P.decRoomName(P.encRoomName('')) === '教室', '空白教室名稱');
 ok(P.decRoomName('P12,03:題目') === null && P.decRubric(P.encRoomName('A,B')) === null, '教室名稱不跟其他訊息混淆');
 
+// 4b. 個人名單
+for (const n of [2, 7, 30, 60]) {
+  const names = Array.from({ length: n }, (_, i) => i % 7 === 3 ? '' : ['王小明', '陳大文', 'Amy Lin', '林,美:玲|', '歐陽十一十二十三'][i % 5]);
+  const parts = P.encRoster(55, names, n);
+  parts.forEach(s => ok(s.length <= 60, '名單訊息長度 ' + s.length));
+  const back = [].concat(...parts.map(s => P.decRoster(s).names));
+  ok(back.length === n, '名單人數還原 ' + n + ' → ' + back.length);
+  ok(back.every((v, i) => v === P.cleanWho(names[i])), '名單內容還原');
+  ok(parts.every(s => P.decRoster(s).n === parts.length && P.decRubric(s) === null && P.decTitle(s) === null), '名單分段與其他訊息不混淆');
+}
+ok(P.encRoster(10, Array(60).fill('一二三四五六七八'), 60).length <= 99, '最長名單段數');
 // 5. 計分
 const crit = [{ n: 'A', w: 50 }, { n: 'B', w: 30 }, { n: 'C', w: 20 }];
 const base = { groups: 3, crit, teacherW: 0, trim: false, mode: 'person', names: ['甲', '乙', '丙'] };
