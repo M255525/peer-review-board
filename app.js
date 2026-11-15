@@ -444,7 +444,8 @@ function setupView(){
     '<section class="card margin"><h2>③ 評分規則</h2><div class="form">' +
     '<div class="fld">' + U('自己的組', '自己') + '<small>不管怎麼選，自評都不會算進同儕分數</small>' + segBtns('self', [[true, '可以自評（另外比較）'], [false, '不能評自己']]) + '</div>' +
     '<div class="fld">寫評語<small>每人一句優點、一句建議</small>' + segBtns('comments', [[true, '要寫（選填）'], [false, '不用']]) + '</div>' +
-    '<div class="fld">報告時間' + segBtns('presSec', [[180, '3 分'], [300, '5 分'], [480, '8 分'], [600, '10 分'], [900, '15 分']]) + '</div>' +
+    '<div class="fld">報告時間<small>' + U('每組', '每人') + '上台的計時，只提醒、不會自動截止</small>' + segBtns('presSec', [[180, '3 分'], [300, '5 分'], [480, '8 分'], [600, '10 分'], [900, '15 分']]) +
+      '<span class="presCustom">或自訂 <input id="cPresMin" inputmode="decimal" maxlength="4" value="' + fmtMin(c.presSec) + '" aria-label="自訂報告時間（分鐘）"> 分鐘<small>（0.5～60，可輸入 2.5）</small></span></div>' +
     '<div class="fld">評分時間<small>倒數到 0 自動截止，可以延長</small>' + segBtns('scoreSec', [[60, '60 秒'], [90, '90 秒'], [120, '2 分'], [180, '3 分']]) + '</div>' +
     '<div class="fld">公布分數' + segBtns('reveal', [['end', '全部評完再公布'], ['each', U('每組評完就公布', '每人評完就公布')]]) + '</div>' +
     '<div class="fld">老師分數比重<small>老師沒打分數的' + U('組', '人') + '只算同儕</small>' + segBtns('teacherW', [[0, '不算'], [20, '20%'], [30, '30%'], [50, '50%']]) + '</div>' +
@@ -494,7 +495,7 @@ function runView(){
     '<div class="sb"><div><h2 class="who" style="color:' + gcol(g) + '">' + gname(g) + '</h2>' + (title ? '<div class="topic">' + esc(title) + '</div>' : '') + '</div><div class="clock" id="clock"></div></div>' +
     (ph >= 2 ? '<div class="meter" id="meter">' + meterHtml() + '</div>' : '') +
     '<div class="ctl noprint">' +
-    (ph === 1 ? (G.pres.runAt ? '<button class="btn alt" data-act="presPause">⏸ 暫停計時</button>' : '<button class="btn alt" data-act="presRun">▶ ' + (G.pres.left < c.presSec * 1000 ? '繼續' : '開始') + '報告計時</button>') + '<button class="btn alt sm" data-act="presReset">↺ 重設</button><button class="btn big red" data-act="open">✍ 開放評分</button>' : '') +
+    (ph === 1 ? (G.pres.runAt ? '<button class="btn alt" data-act="presPause">⏸ 暫停計時</button>' : '<button class="btn alt" data-act="presRun">▶ ' + (G.pres.left < c.presSec * 1000 ? '繼續' : '開始') + '報告計時</button>') + '<button class="btn alt sm" data-act="presAdd" data-d="-60">－1 分</button><button class="btn alt sm" data-act="presAdd" data-d="60">＋1 分</button><button class="btn alt sm" data-act="presReset">↺ 重設</button><button class="btn alt sm" data-act="presSet" title="改報告時間">⏱ ' + U('每組', '每人') + ' ' + fmtMin(c.presSec) + ' 分 ✏</button><button class="btn big red" data-act="open">✍ 開放評分</button>' : '') +
     (ph === 2 ? '<button class="btn alt" data-act="addTime">＋30 秒</button><button class="btn big" data-act="stop">⏹ 截止評分</button>' : '') +
     (ph === 3 ? '<button class="btn alt" data-act="reopen">↩ 重新開放</button>' + (c.reveal === 'each' ? '<button class="btn alt" data-act="showCur">' + (V.showCur ? '🙈 收起分數' : U('👀 公布這組分數', '👀 公布這位的分數')) + '</button>' : '') + '<button class="btn big red" data-act="next">' + (G.cur < G.order.length - 1 ? U('下一組 ▶', '下一位 ▶') : '📊 看結果') + '</button>' : '') +
     '<span class="small" style="align-self:center">空白鍵＝下一步</span></div>' +
@@ -762,7 +763,10 @@ document.addEventListener('input', function(e){
   }
   if(t.id === 'cTitle' || t.id === 'cNames') readCfg();
 });
+function fmtMin(sec){ var m = sec / 60; return String(Math.round(m * 10) / 10); }
+function parseMin(v){ var m = parseFloat(String(v || '').replace(/[^0-9.]/g, '')); if(!isFinite(m) || m < .5 || m > 60) return 0; return Math.round(m * 2) / 2 * 60; }
 document.addEventListener('change', function(e){
+  if(!JOIN && G && e.target.id === 'cPresMin'){ var sec = parseMin(e.target.value); if(!sec){ toast('報告時間請輸入 0.5～60 分鐘'); e.target.value = fmtMin(G.cfg.presSec); return; } G.cfg.presSec = sec; G.pres.left = sec * 1000; readCfg(); render(); toast('報告時間 ' + fmtMin(sec) + ' 分鐘'); return; }
   var t = e.target; if(JOIN || !G) return;
   if(t.id === 'cGroups'){ readCfg(); var n = +t.value; G.cfg.groups = n; G.cfg.names = G.cfg.names.slice(0, n); G.order = G.order.filter(function(x){ return x <= n; }); for(var i = 1; i <= n; i++) if(G.order.indexOf(i) < 0) G.order.push(i); readCfg(); T.push(); render(); }
   if(t.id === 'pGrp') G.pdraft.grp = +t.value;
@@ -864,6 +868,17 @@ var ACT = {
   presRun:function(){ G.pres.runAt = Date.now(); saveG(); render(); },
   presPause:function(){ G.pres.left = presLeft(); G.pres.runAt = 0; saveG(); render(); },
   presReset:function(){ G.pres = {left:G.cfg.presSec * 1000, runAt:0}; saveG(); render(); },
+  presAdd:function(el){ var d = +el.dataset.d * 1000, left = presLeft(); if(left + d < 0) d = -Math.max(0, left); G.pres.left += d; saveG(); T.tick(); toast(d >= 0 ? '報告時間＋1 分' : '報告時間－1 分'); },
+  presSet:function(){ openModal('<h2>⏱ 報告時間</h2><p class="lead">' + U('每組', '每人') + '上台的計時（只提醒、不會自動截止）。改了之後，接下來每' + U('組', '位') + '都用新的時間。</p><div class="presets">' + [3, 5, 8, 10, 15, 20].map(function(m){ return '<button data-act="presPick" data-m="' + m + '" aria-pressed="' + (G.cfg.presSec === m * 60) + '">' + m + ' 分</button>'; }).join('') + '</div>' +
+    '<label class="fld" style="margin-top:.6rem;max-width:14rem">自訂（分鐘，0.5～60）<input id="presMinIn" inputmode="decimal" maxlength="4" value="' + fmtMin(G.cfg.presSec) + '"></label>' +
+    '<div class="stack"><button class="btn red" data-act="presSetYes">套用</button><button class="btn alt" data-act="close">取消</button></div>'); },
+  presPick:function(el){ var i = $('presMinIn'); if(i) i.value = el.dataset.m; document.querySelectorAll('[data-act=presPick]').forEach(function(b){ b.setAttribute('aria-pressed', b === el); }); },
+  presSetYes:function(){
+    var sec = parseMin(($('presMinIn') || {}).value); if(!sec){ toast('請輸入 0.5～60 分鐘'); return; }
+    var fresh = !G.pres.runAt && G.pres.left === G.cfg.presSec * 1000;   // 這組還沒開始計時就直接換成新時間
+    G.cfg.presSec = sec; if(G.stage === 'run' && G.ph === 1 && fresh) G.pres.left = sec * 1000;
+    readCfg(); saveG(); closeModal(); render(); toast('報告時間改成 ' + fmtMin(sec) + ' 分鐘' + (fresh ? '' : '，下一' + U('組', '位') + '開始套用'));
+  },
   open:function(){ T.open(); }, stop:function(){ T.close(); }, next:function(){ T.next(); },
   reopen:function(){ G.ph = 2; G.until = Date.now() + Math.max(30, G.cfg.scoreSec / 2) * 1000; delete G.done[curGrp()]; snd('open'); T.push(); saveG(); render(); },
   addTime:function(){ if(G.ph === 2){ G.until = Math.max(G.until, Date.now()) + 30000; T.push(); saveSoon(); T.tick(); } },

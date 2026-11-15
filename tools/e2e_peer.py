@@ -41,6 +41,10 @@ with sync_playwright() as p:
     t.fill('#cNames', '校園二手書平台\n社區共享冰箱\n銀髮族手機課')
     t.click('[data-preset=poster]')
     check(t.evaluate('_prb.G.cfg.crit.length') == 5, '海報量表 5 項')
+    t.fill('#cPresMin', '99'); t.dispatch_event('#cPresMin', 'change'); t.wait_for_timeout(150)
+    check(t.evaluate('_prb.G.cfg.presSec') != 99 * 60, '報告時間超過 60 分鐘會擋下')
+    t.fill('#cPresMin', '2.5'); t.dispatch_event('#cPresMin', 'change'); t.wait_for_timeout(150)
+    check(t.evaluate('_prb.G.cfg.presSec') == 150 and t.input_value('#cPresMin') == '2.5', '自訂報告時間 2.5 分鐘')
     t.fill('[data-ci="0"][data-cf="w"]', '30')
     check(t.inner_text('#wsum') == '110', '權重合計即時更新 %s' % t.inner_text('#wsum'))
     check(t.evaluate('_prb.NET.want'), '開新互評自動開放手機加入')
@@ -106,6 +110,12 @@ with sync_playwright() as p:
     check(True, '學生收到題目')
     t.click('[data-act=presRun]'); t.wait_for_timeout(1200)
     check(t.evaluate('_prb.G.pres.runAt') > 0, '報告計時開始')
+    before = t.evaluate('_prb.G.pres.left')
+    t.click('[data-act=presAdd][data-d="60"]'); t.wait_for_timeout(100)
+    check(t.evaluate('_prb.G.pres.left') - before == 60000, '報告中＋1 分')
+    check('2.5 分' in t.inner_text('[data-act=presSet]'), '進行中顯示目前報告時間')
+    t.click('[data-act=presSet]'); t.fill('#presMinIn', '7'); t.click('[data-act=presSetYes]'); t.wait_for_timeout(150)
+    check(t.evaluate('_prb.G.cfg.presSec') == 420 and t.evaluate('_prb.G.pres.left') == before + 60000, '進行中改成 7 分鐘（這組已在計時，不打斷）')
     t.screenshot(path=os.path.join(OUT, '04_run_present.png'), full_page=True)
 
     # 第 1 組：開放評分
@@ -149,6 +159,7 @@ with sync_playwright() as p:
     # 第 2 組：不公布、時間到自動截止
     t.click('[data-act=next]'); t.wait_for_timeout(200)
     check(t.evaluate('_prb.G.cur') == 1, '下一組')
+    check(t.evaluate('_prb.G.pres.left') == 420000, '下一組套用新的報告時間 7 分鐘')
     t.click('[data-act=open]')
     t.evaluate('_prb.G.until = Date.now() + 8000; _prb.T.push()')
     for s in [studs[0], studs[2]]: s.wait_for_function('_prb.S.T.cur === 2 && _prb.S.T.ph === 2 && _prb.S.names()', timeout=20000)
