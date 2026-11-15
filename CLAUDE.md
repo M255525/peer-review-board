@@ -1,0 +1,36 @@
+# peer-review-board — 同儕互評：小組報告即時評分
+
+課堂用。小組輪流上台，台下同學掃 QR code 用手機依評分量表打 1～5 分，再寫一句優點、一句建議。老師開網頁投影，學生不用 App、不用登入；沒有手機的同學用紙本評分單，老師「紙本代填」。
+
+2026-11-15 建立。使用者從「還可以做哪些應用」清單中挑了「同儕互評」。
+
+- 純靜態：`index.html`（CSS，評分單方格紙＋深藍墨水＋紅筆／螢光筆）＋`data.js`（量表預設、計分引擎、轉播站訊息編解碼；node 可 require）＋`app.js`（老師端 `T`、學生端 `S`、連線 `NET`）＋`watermark.js`（列印浮水印，從全班競標複製）＋`manual.html`＋PWA。
+- 本機預覽 port **8884**（`.claude/launch.json` 的 `peer-review-board`）。visitor-badge `m255525.peerreviewboard`。預定線上網址 <https://m255525.github.io/peer-review-board/>（寫死在 `app.js` 的 `ONLINE`，非 github.io 網址時 QR code 一律指向它）。**尚未上線**（repo 由使用者自己 `gh repo create`；先 push 後開 Pages，`build_type=workflow`）。
+
+## 引擎（data.js）
+- 6 組預設量表（簡報報告、創業提案、海報作品展、小組專題、行銷企劃、產品展示），自行撰寫，權重各加總 100。最多 6 項、項目名稱最多 8 字（`cleanCrit` 拿掉 `| , ， :`，因為要塞進聊天訊息）。
+- `compute(cfg, reviews)`：每份加權平均（1～5）×20＝100 分制。同儕分只算 `peer`＋`paper`；`self` 永遠不算進同儕，只算落差；`teacher` 依 `teacherW`% 混入。`mode:'group'` 先組內平均再平均；`trim` 5 份以上去掉最高最低各 1。同分同名次。
+- `raterStats`：寬嚴＝跟同一場平均的差（同一場 ≥3 份才算，≥2 場才標，±0.6 分＝±12 分）；全部滿分／每項一樣（≥2 場）；跟中位數差 ≥1.2（同一場 ≥4 份）達 2 次標「常跟大家差很多」。
+- **改 data.js 後跑 `node tools/test_engine.mjs`**（約 119 萬項；會 import 創業島 `presence-worker/badwords.js` 窮舉檢查狀態碼不被不雅字詞過濾）。
+
+## 手機連線（借用創業島轉播站教室模式，Worker 沒改）
+- `room=PEER<6碼>&cls=1`，老師帶 `tkey`（存 `prb.tkey.<碼>`）。不是 `VOTE` 前綴，不會出現在教室大廳。學生只看得到老師；**學生的聊天也只有老師收到**（評語走聊天）。
+- presence name（≤24 字、只用數字＋`T/J/S/|`）：老師 `T|<gid2><組數2><目前組2><階段1><項目數1><旗標1：1自評+2評語><剩餘秒3>`（階段 0 設定、1 報告中、2 評分中、3 截止、9 結束）；學生 `J|<gid2><組2>`、`S|<gid2><組2><報告組2>|<分數…>`。
+- 聊天（≤60 字、2.7 秒佇列）：老師 `K<gid>,i/n:項目,項目`（評分項目，有新人加入 3 秒後重送，因為轉播站只留 20 則歷史）、`P<gid>,<組>:題目`；學生 `N:名字`（每次連上送一次）、`C<gid>,<組>+:優點`／`-:建議`。
+- **老師只收「目前報告組且評分中（或截止後 6 秒內）」的分數與評語**：重連時轉播站會重播學生最後狀態，不比對會把舊分數算進別組。
+- 學生重畫時要保留 `codeIn/whoIn` 的輸入值（踩過：打名字到一半收到老師狀態，整頁重畫把字清掉，E2E 抓到）。
+- `ACT` 的鍵名不可重複（踩過：截止評分也叫 `close`，蓋掉關彈窗，警語關不掉）。截止評分是 `stop`。
+
+## 畫面
+- 老師 localStorage 前綴 `prb.`：`event`（整場 G：cfg、order、reviews、notes、members…）、`cfg`（上次的量表與規則）、`net`、`tpOpen/ppOpen`（面板展開）、`fs`、`mute`、`fold`、`warnSeen`、`marquee`。學生：`who`、`grp.<碼>`、`sid.<碼>`、`mine.<碼>.<gid>`。
+- 進行中只局部更新（`T.paint`：收到份數、各組狀況），避免打斷老師輸入；空白鍵＝開放評分／截止／下一組。評分倒數到 0 自動截止；評分中每 10 秒重送剩餘秒數。
+- 結果頁：排名、全班觀察（強項／待加強／自評落差／最分歧／寬嚴／需留意）、各組卡（SVG 雷達＋長條＋評語，匿名）、評分者分析（收合）。老師比重／計分單位／去頭尾可即時切換重算。
+- 列印：`printHtml()` 把內容放 `#printArea`、body 加 `print-area`；各組回饋單每組一頁、紙本評分單一頁。CSV 有 BOM。
+- 測試掛鉤 `window._prb`（G、T、S、NET、ACT、V、P、result()）。
+
+## 驗證
+- `python tools/e2e_peer.py <截圖資料夾>`（需先開 8884；連**正式轉播站**隨機 PEER 房間；`PRB_BASE` 可測線上版）：老師＋4 支 375px 手機：加入選組、題目傳到手機、自評、修改分數、評語、老師評分、紙本代填、截止後不收、自動截止、結果分數與手算一致、老師比重重算、CSV、回饋單 3 頁、無橫向溢出、重新整理保留、再開一場代碼不變、關閉教室 4004。2026-11-15 全過、無 console 錯誤。
+- **真手機掃 QR、投影機、30 人以上同時送出未實測。**
+
+## 標準配備
+跑馬燈（工作區公告 GAS，滑鼠移入暫停）、⚙ 常用設定（收合式＋關於本工具）、首訪警語（學生頁不跳，頁尾有連結）、`manual.html#creator`（改 `tools/manual_body.html` 後跑 `python tools/build_manual.py`）、PWA（`tools/make_icons.py`；上線改版升 `service-worker.js` 的 `CACHE_NAME`）、訪客計數器、列印浮水印。無序號、無 AI。

@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>同儕互評・操作手冊</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@900&family=Noto+Sans+TC:wght@500;700;900&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#1F2A44;--sub:#5F6678;--bg:#FBF8F0;--paper:#FFFFFF;--line:#D9D2BF;--red:#C8102E;--hl:#FFE45C}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:'Noto Sans TC','Microsoft JhengHei',sans-serif;font-weight:500;font-size:17px;line-height:1.75}
+main{max-width:800px;margin:0 auto;padding:20px 16px 48px}
+h1,h2{font-family:'Noto Serif TC',serif;font-weight:900;line-height:1.35}
+h1{font-size:30px;margin:0 0 6px}
+h2{font-size:22px;margin:4px 0 8px}
+section{background:var(--paper);border-radius:6px;box-shadow:0 0 0 1px var(--line);border-left:4px double var(--red);padding:12px 18px 14px;margin-top:14px}
+a{color:#34446B;font-weight:700}
+li{margin:5px 0}
+ol,ul{padding-left:1.3em}
+.tw{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:15px;min-width:540px}
+th,td{border:1px solid var(--line);padding:5px 8px;text-align:left;vertical-align:top}
+th{background:var(--bg)}
+.hl{background:linear-gradient(transparent 55%,var(--hl) 55%)}
+@media print{body{background:#fff}section{break-inside:avoid;box-shadow:0 0 0 1px #888}}
+</style>
+</head>
+<body>
+<main>
+<h1>📝 同儕互評・操作手冊</h1>
+<p><a href="index.html">← 回到同儕互評</a></p>
+
+<section>
+<h2>這是什麼</h2>
+<p>課堂上小組輪流上台報告，<b>台下同學用手機依評分量表打分</b>，再寫一句優點、一句建議。老師用電腦開這個網頁投影；學生掃 QR code 加入，<b>不用下載 App、不用登入</b>。</p>
+<p>全部評完，自動算出每組分數、排名、各項雷達圖、全班強項與弱項、自評與同學評的落差，還會標出給分偏寬、偏嚴或全部給滿分的評分者。最後可以<b>一鍵印出每組一張的回饋單</b>，或下載 CSV。</p>
+</section>
+
+<section>
+<h2>老師怎麼開一場</h2>
+<ol>
+<li>按「＋ 開始新的互評」。</li>
+<li><b>① 活動資料</b>：活動名稱、組數（2～20 組）、各組題目（一行一組，可空白）。</li>
+<li><b>② 評分量表</b>：先選一組預設（簡報報告、創業提案、海報作品展、小組專題、行銷企劃、產品展示），再改項目名稱、權重、說明。最多 6 項，每項 1～5 分。</li>
+<li><b>③ 評分規則</b>：見下一節。</li>
+<li><b>④ 上台順序</b>：用 ▲▼ 調整，或按「🎲 隨機抽順序」。</li>
+<li><b>⑤ 讓學生加入</b>：按「📱 開放手機加入」，投影 QR code。學生可以先加入、選組。</li>
+<li>按「▶ 開始互評」。</li>
+</ol>
+<p>每一組的流程：<b>報告中</b>（可開報告計時）→ 按「✍ 開放評分」→ 倒數時間內學生送出 → 時間到自動截止（或按「⏹ 截止評分」）→「下一組 ▶」。<span class="hl">投影時按空白鍵就是下一步。</span>上方的組別號碼可以跳回任何一組重新開放。</p>
+</section>
+
+<section>
+<h2>評分規則怎麼選</h2>
+<div class="tw"><table>
+<tr><th>規則</th><th>選項</th><th>說明</th></tr>
+<tr><td>自己的組</td><td>可以自評／不能評自己</td><td>自評<b>永遠不會算進同儕分數</b>，只拿來跟同學評的比較落差。</td></tr>
+<tr><td>寫評語</td><td>要寫（選填）／不用</td><td>每人一句優點、一句建議，各最多 50 字。只有老師看得到，回饋單上不顯示是誰寫的。</td></tr>
+<tr><td>報告時間</td><td>3～15 分</td><td>只是提醒用的計時，不會自動截止。</td></tr>
+<tr><td>評分時間</td><td>60 秒～3 分</td><td>倒數到 0 自動截止，可以「＋30 秒」。</td></tr>
+<tr><td>公布分數</td><td>全部評完再公布／每組評完就公布</td><td>先不公布可以減少「跟著前面的分數走」。</td></tr>
+<tr><td>老師分數比重</td><td>不算、20%、30%、50%</td><td>老師在「🧑‍🏫 老師評分」打的分數依比重混進總分；老師沒評的組只算同儕。</td></tr>
+<tr><td>計分單位</td><td>每人一票／每組一票</td><td>每組一票＝同一組的評分先平均，再跟其他組平均，避免人多的組影響太大。</td></tr>
+<tr><td>去掉最高與最低</td><td>去掉／不去掉</td><td>有 5 份以上才會各去掉 1 份，降低極端分數的影響。</td></tr>
+</table></div>
+<p>老師比重、計分單位、去頭尾在<b>結果頁可以隨時切換</b>，分數立刻重算。</p>
+</section>
+
+<section>
+<h2>分數怎麼算</h2>
+<ul>
+<li>每份評分的<b>加權平均</b>＝Σ（項目分數 × 權重）÷ 權重合計，介於 1～5 分。權重合計不是 100 也沒關係。</li>
+<li><b>同儕分</b>＝所有同儕評分（含紙本代填）加權平均的平均，<b>× 20 換算成 100 分</b>（全部 5 分＝100、全部 1 分＝20）。</li>
+<li><b>總分</b>＝同儕分 ×（1－老師比重）＋老師分 × 老師比重。</li>
+<li><b>自評落差</b>＝自評分－同儕分。＋10 以上表示自己評得比同學高。</li>
+<li><b>給分寬嚴</b>：每位評分者給的分數，平均比同一組其他人的平均高或低幾分（同一組要有 3 份以上才算）。平均高 12 分以上標「給分偏寬」，低 12 分以上標「給分偏嚴」。</li>
+<li>每人評 2 組以上，所有項目都給 5 分標「全部給滿分」，所有項目都同一個分數標「每項分數都一樣」；有 2 組以上跟中位數差 24 分以上標「常跟大家差很多」。</li>
+</ul>
+<p>這些提醒只是統計上的參考，<b>不代表一定亂評</b>，請不要公開點名。</p>
+</section>
+
+<section>
+<h2>📄 沒有手機的同學</h2>
+<ol>
+<li>在設定頁按「🖨 印紙本評分單」，印出來發給沒有手機的同學（每列一組、每欄一個評分項目）。</li>
+<li>每組評分時，展開「📄 紙本代填」：選評分者的組別、點每項分數，按「＋ 加入這一份」。</li>
+<li>紙本評分算在同儕分裡，跟手機評分一樣。</li>
+</ol>
+</section>
+
+<section>
+<h2>學生手機畫面</h2>
+<ol>
+<li>掃 QR code，或打開網址加 <code>?join</code> 輸入 6 碼代碼。</li>
+<li>填學號或姓名（最多 8 個字，只有老師看得到）、選自己的組。</li>
+<li>老師按「開放評分」時手機會出現評分表：每項點 1～5（下方有「待加強～卓越」說明），選填優點與建議，按「📨 送出評分」。</li>
+<li>截止前都可以改，改完再按「🔁 更新評分」。</li>
+<li>自己的組上台時，老師有開自評就會出現「自評」，否則顯示「不用評分」。</li>
+</ol>
+<p>學生只看得到老師的畫面，<b>看不到其他同學的分數與評語</b>。</p>
+</section>
+
+<section>
+<h2>結果頁</h2>
+<ul>
+<li><b>🏆 排名</b>：總分、同儕分與份數、老師分、自評與落差。</li>
+<li><b>💡 全班觀察</b>：全班強項與待加強、自評落差、意見最分歧的組、各組給分寬嚴。</li>
+<li><b>📋 各組回饋</b>：雷達圖（紅＝本組、灰虛線＝全班平均）、各項分數與全班差多少、同學的優點與建議。</li>
+<li><b>🔍 評分者分析</b>：老師自己看就好，不建議投影。</li>
+<li><b>🖨 印各組回饋單</b>：每組一頁 A4，含分數、雷達圖、項目表、優點建議與「老師的話」空白欄，可以存成 PDF 發給各組。</li>
+<li><b>⬇ CSV</b>：原始分數（每一份評分一列，含評分者與評語）、總表（每組一列）。用 Excel 開啟不會亂碼。</li>
+<li>「🔁 同一班再開一場」：代碼不變，學生不用重新加入。</li>
+</ul>
+</section>
+
+<section>
+<h2>⚙ 常用設定</h2>
+<ul>
+<li>顯示：標準字／大字（投影用）。</li>
+<li>音效：開放評分、截止、收到分數的提示音。</li>
+<li>手機連線：開放或關閉教室（關閉後舊代碼失效）。</li>
+<li>🧹 清除全部資料：清掉這台電腦上的分數、評語與設定。</li>
+</ul>
+</section>
+
+<section>
+<h2>⚠ 使用警語</h2>
+<ul>
+<li>同儕互評是同學的主觀意見，難免受人際關係、從眾、印象影響。建議當作回饋與參考，搭配老師評分；用在正式成績時，請事先跟學生說明比重與規則。</li>
+<li>手機連線借用「創業島」的轉播站，只傳送組別、分數、評語與學生自己填的學號或姓名。轉播站不儲存資料，離線就消失。</li>
+<li>評語會經過不雅字詞過濾，仍請提醒學生對事不對人，不要填身分證字號、電話等個人資料。</li>
+<li>分數、評語、設定只存在老師這台電腦的瀏覽器。清除瀏覽器資料就會不見，需要留存請下載 CSV 或列印回饋單。</li>
+<li>手機送出受網路影響可能有延遲，截止前幾秒送出的可能來不及收到。重要場合請預留時間，或搭配紙本評分單。</li>
+<li>預設評分量表為本工具自行撰寫的一般性項目，請依課程目標調整。</li>
+</ul>
+</section>
+
+<section id="creator">
+<h2>👤 關於創作者</h2>
+<div class="mk-creator">
+<style>.mk-creator{line-height:1.75}.mk-creator h3{margin:14px 0 6px;font-size:1.05em}.mk-creator table{width:100%;border-collapse:collapse;font-size:.95em}.mk-creator td,.mk-creator th{text-align:left;padding:5px 6px;border-bottom:1px solid rgba(128,128,128,.3);vertical-align:top}.mk-creator th{white-space:nowrap}.mk-creator ul{margin:4px 0;padding-left:1.4em}.mk-creator .mk-tags{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0}.mk-creator .mk-tags span{border:1px solid rgba(128,128,128,.45);border-radius:999px;padding:1px 10px;font-size:.9em}</style>
+<p><b>Mark Tsai（蔡豐全）</b>為深耕創業輔導與數位轉型領域的顧問與講師，長期擔任勞動力發展署創業顧問與多項政府計畫的顧問、業師與評審委員，協助中小企業導入數據分析與 AI 工具、申請政府補助計畫，並具備跨境電商實務與講師培訓的豐富經驗。本工具是其推廣 AI 工具運用於教學與課程情境的作品之一。</p>
+<p>聯絡信箱：<a href="mailto:tsaimark@gmail.com">tsaimark@gmail.com</a></p>
+<h3>專長</h3>
+<div class="mk-tags"><span>銷售數據分析</span><span>AI 工具運用</span><span>政府補助計畫申請</span><span>創業</span><span>跨境電商</span></div>
+<h3>證照</h3>
+<table>
+<thead><tr><th>年度</th><th>證照</th></tr></thead>
+<tbody>
+<tr><td>2013</td><td>青創總會 創業輔導顧問師班</td></tr>
+<tr><td>2014</td><td>青創總會 網路行銷講師培訓班</td></tr>
+<tr><td>2016</td><td>阿里巴巴 P4P 認證講師</td></tr>
+<tr><td>2017</td><td>iCap 訓練規劃與評量職能基準課程</td></tr>
+<tr><td>2023</td><td>iCap 職能導向課程申請認證實作班</td></tr>
+<tr><td>2025</td><td>iPAS AI 應用規劃師－初級</td></tr>
+<tr><td>2025</td><td>新北市社會局 社區數位陪伴員</td></tr>
+</tbody>
+</table>
+<h3>經歷</h3>
+<ul>
+<li>勞動力發展署桃竹苗分署 創業顧問（2017－迄今）</li>
+<li>勞動力發展署（北北基）小型企業人力提升計畫 顧問（2019－迄今）</li>
+<li>勞動力發展署（桃竹苗）小型企業人力提升計畫 顧問（2019－迄今）</li>
+<li>農業部農業科技司「科技農企業雙軸轉型躍升發展」科技計畫 業師（2025－2026）</li>
+<li>勞動力發展署 企業人力資源提升計畫 審查委員（2024）</li>
+<li>勞動力發展署 職前訓練評鑑計畫 委員（2022）</li>
+<li>勞動部桃竹苗分署 桃竹苗區域運籌人力資源整合服務計畫 顧問（2022－2023）</li>
+<li>經濟部中小企業處 SBIR 海選專案 評審委員（2019－2024）</li>
+<li>勞動力發展署 數位學習課程清單審查會議 審查委員（2024－2025）</li>
+<li>輔仁大學創新跨領域學院 課務委員（2024－2025）</li>
+<li>台北市進出口商業同業公會 跨境電商生態村 顧問</li>
+<li>台灣網商協會 顧問</li>
+<li>中華職能開發策進會 顧問（2018－2020）</li>
+<li>新北市汽車美容人員職業工會 顧問（2023－迄今）</li>
+<li>中華網路行銷講師協會 顧問（2022－迄今）</li>
+<li>新北市社企電商基地 輔導顧問（2018－2020）</li>
+<li>阿里巴巴國際站平台 認證講師（2016）</li>
+<li>巨匠電腦 跨境電子商務班 講師（2016－2017）</li>
+</ul>
+</div>
+</section>
+<p style="text-align:center"><a href="index.html">← 回到同儕互評</a></p>
+</main>
+</body>
+</html>

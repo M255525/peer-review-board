@@ -1,0 +1,199 @@
+# 端對端：老師分頁＋4 支學生手機（各自獨立的瀏覽器 context），連正式轉播站的隨機 PEER 房間
+# 用法：python tools/e2e_peer.py <截圖資料夾>（需先開 http://127.0.0.1:8884；可設 PRB_BASE 測線上版）
+import sys, io, os, json
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', line_buffering=True)
+from playwright.sync_api import sync_playwright
+OUT = sys.argv[1]; os.makedirs(OUT, exist_ok=True)
+BASE = os.environ.get('PRB_BASE', 'http://127.0.0.1:8884/')
+errs, fails = [], []
+def check(c, msg):
+    print(('ok   ' if c else 'FAIL ') + msg)
+    if not c: fails.append(msg)
+def stub(pg, tag):
+    pg.route('**/script.google.com/**', lambda r: r.fulfill(status=200, body='{"marquee":["測試公告：跑馬燈正常"]}', headers={'content-type': 'application/json'}))
+    pg.route('**/visitor-badge.laobi.icu/**', lambda r: r.fulfill(status=200, body='', headers={'content-type': 'image/svg+xml'}))
+    pg.on('pageerror', lambda e: errs.append(tag + ': ' + str(e)))
+    pg.on('console', lambda m: m.type == 'error' and errs.append(tag + ': ' + m.text))
+def score(s, vals, plus=None, minus=None):
+    s.wait_for_selector('[data-sc="0,1"]', timeout=20000)
+    for i, v in enumerate(vals): s.click('[data-sc="%d,%d"]' % (i, v))
+    if plus is not None: s.fill('#nPlus', plus)
+    if minus is not None: s.fill('#nMinus', minus)
+    s.click('[data-act=submit]')
+def nrev(t, g, kinds="['peer','self']"):
+    return t.evaluate("Object.values(_prb.G.reviews).filter(r => r.pres === %d && %s.includes(r.kind)).length" % (g, kinds))
+
+with sync_playwright() as p:
+    b = p.chromium.launch()
+    tc = b.new_context(viewport={'width': 1366, 'height': 900}, accept_downloads=True)
+    t = tc.new_page(); stub(t, 'T')
+    t.goto(BASE); t.wait_for_timeout(600)
+    check(t.is_visible('#modal.show'), '首訪跳出警語')
+    t.screenshot(path=os.path.join(OUT, '01_warn.png'))
+    t.click('#modal .btn'); t.screenshot(path=os.path.join(OUT, '02_home.png'), full_page=True)
+    t.click('[data-act=newSetup]'); t.wait_for_timeout(300)
+    t.fill('#cTitle', '期末專題發表')
+    t.select_option('#cGroups', '3')
+    t.fill('#cNames', '校園二手書平台\n社區共享冰箱\n銀髮族手機課')
+    t.click('[data-preset=poster]')
+    check(t.evaluate('_prb.G.cfg.crit.length') == 5, '海報量表 5 項')
+    t.fill('[data-ci="0"][data-cf="w"]', '30')
+    check(t.inner_text('#wsum') == '110', '權重合計即時更新 %s' % t.inner_text('#wsum'))
+    check(t.evaluate('_prb.NET.want'), '開新互評自動開放手機加入')
+    t.wait_for_function('_prb.NET.status === "on"', timeout=15000)
+    code = t.evaluate('_prb.NET.code'); print('room', code)
+    t.screenshot(path=os.path.join(OUT, '03_setup.png'), full_page=True)
+
+    studs = []
+    plan = [('S01', 1), ('S02', 2), ('S03', 3), ('S04', 2)]
+    for i, (who, grp) in enumerate(plan):
+        c = b.new_context(viewport={'width': 375, 'height': 740}, has_touch=True, is_mobile=True)
+        s = c.new_page(); stub(s, who)
+        s.goto(BASE + '?join=' + code); s.wait_for_timeout(400)
+        s.fill('#whoIn', who); s.click('[data-act=saveWho]')
+        try:
+            s.wait_for_selector('[data-grp="3"]', timeout=15000)
+        except Exception:
+            print('DEBUG', s.evaluate('JSON.stringify({T:_prb.S.T, st:_prb.NET.status, peers:_prb.NET.peers, ask:_prb.S.askWho})'), s.inner_text('#app')[:200])
+            print('DEBUG T', t.evaluate('JSON.stringify({st:_prb.NET.status, state:_prb.NET.state})')); raise
+        if i == 0: s.screenshot(path=os.path.join(OUT, '10_stu_grp.png'))
+        s.click('[data-grp="%d"]' % grp)
+        studs.append(s)
+    t.wait_for_function('Object.values(_prb.G.members).filter(m => m.grp > 0 && m.who).length >= 4', timeout=20000)
+    mem = t.evaluate('Object.values(_prb.G.members).map(m => m.grp + ":" + m.who).sort()')
+    check(mem == ['1:S01', '2:S02', '2:S04', '3:S03'], '老師看到成員 %s' % mem)
+    check('已加入 4 人' in t.inner_text('#joinList').replace('<b>', ''), '加入清單 %s' % t.inner_text('#joinList'))
+
+    t.click('[data-act=start]'); t.wait_for_timeout(300)
+    check(t.evaluate('_prb.G.stage') == 'run' and t.evaluate('_prb.G.order') == [1, 2, 3], '開始，順序 1-2-3')
+    studs[0].wait_for_function('_prb.S.T && _prb.S.T.cur === 1 && _prb.S.T.ph === 1', timeout=15000)
+    check('上台' in studs[0].inner_text('#app') or '報告中' in studs[0].inner_text('#app'), '報告組手機顯示上台')
+    studs[1].wait_for_function('_prb.S.titles[1] === "校園二手書平台"', timeout=20000)
+    check(True, '學生收到題目')
+    t.click('[data-act=presRun]'); t.wait_for_timeout(1200)
+    check(t.evaluate('_prb.G.pres.runAt') > 0, '報告計時開始')
+    t.screenshot(path=os.path.join(OUT, '04_run_present.png'), full_page=True)
+
+    # 第 1 組：開放評分
+    t.keyboard.press('Space'); t.wait_for_timeout(200)
+    check(t.evaluate('_prb.G.ph') == 2, '空白鍵開放評分')
+    for s in studs: s.wait_for_function('_prb.S.T.ph === 2 && _prb.S.names()', timeout=20000)
+    studs[1].screenshot(path=os.path.join(OUT, '11_stu_score.png'), full_page=True)
+    check('自評' in studs[0].inner_text('#app'), '報告組出現自評')
+    score(studs[1], [5, 4, 4, 5, 3], '例子很生活化，一聽就懂', '結論可以再收斂')
+    score(studs[2], [4, 4, 3, 4, 4], '投影片很漂亮')
+    score(studs[3], [3, 3, 3, 3, 3])
+    score(studs[0], [5, 5, 5, 5, 5])
+    t.wait_for_function('Object.values(_prb.G.reviews).filter(r => r.pres === 1).length >= 4', timeout=20000)
+    check(nrev(t, 1, "['peer']") == 3 and nrev(t, 1, "['self']") == 1, '第 1 組收到 3 他評＋1 自評')
+    studs[1].screenshot(path=os.path.join(OUT, '12_stu_sent.png'), full_page=True)
+    # 修改評分
+    studs[3].click('[data-sc="0,5"]'); studs[3].click('[data-act=submit]')
+    t.wait_for_function('_prb.G.reviews[Object.keys(_prb.G.reviews).find(k => _prb.G.reviews[k].pres === 1 && _prb.G.members[_prb.G.reviews[k].rid] && _prb.G.members[_prb.G.reviews[k].rid].who === "S04")].s[0] === 5', timeout=15000)
+    check(True, '截止前修改分數有更新')
+    t.wait_for_function('Object.values(_prb.G.notes).some(n => n.minus === "結論可以再收斂")', timeout=25000)
+    check(True, '老師收到評語')
+    # 老師評分＋紙本
+    t.click('.panel[data-keep=tpOpen] summary')
+    for i, v in enumerate([4, 4, 4, 4, 4]): t.click('[data-tsc="%d,%d"]' % (i, v))
+    check(t.evaluate("!!_prb.G.reviews['T@1']"), '老師分數存檔')
+    t.click('.panel[data-keep=ppOpen] summary')
+    t.select_option('#pGrp', '3')
+    for i, v in enumerate([2, 2, 2, 2, 2]): t.click('[data-psc="%d,%d"]' % (i, v))
+    t.select_option('#pGrp', '3')
+    t.click('[data-act=paperAdd]')
+    check(nrev(t, 1, "['paper']") == 1, '紙本代填 1 份')
+    t.screenshot(path=os.path.join(OUT, '05_run_scoring.png'), full_page=True)
+    t.click('[data-act=stop]'); t.wait_for_timeout(200)
+    for s in studs: s.wait_for_function('_prb.S.T.ph === 3', timeout=15000)
+    # 截止後送出不收（模擬：直接改 presence 狀態）
+    t.wait_for_timeout(6500)
+    studs[2].evaluate("_prb.S.mine[1] = {s:[1,1,1,1,1]}; _prb.S.last = 1; _prb.S.sendState()")
+    t.wait_for_timeout(2500)
+    check(t.evaluate("Object.values(_prb.G.reviews).some(r => r.pres === 1 && r.s.join('') === '11111')") is False, '截止後的分數不收')
+
+    # 第 2 組：不公布、時間到自動截止
+    t.click('[data-act=next]'); t.wait_for_timeout(200)
+    check(t.evaluate('_prb.G.cur') == 1, '下一組')
+    t.click('[data-act=open]')
+    t.evaluate('_prb.G.until = Date.now() + 8000; _prb.T.push()')
+    for s in [studs[0], studs[2]]: s.wait_for_function('_prb.S.T.cur === 2 && _prb.S.T.ph === 2 && _prb.S.names()', timeout=20000)
+    score(studs[0], [3, 4, 4, 4, 4]); score(studs[2], [4, 5, 4, 4, 5])
+    check('自評' in studs[1].inner_text('#app'), '第 2 組成員看到自評')
+    t.wait_for_function('_prb.G.ph === 3', timeout=15000)
+    check(True, '倒數到 0 自動截止')
+    check(nrev(t, 2, "['peer']") == 2, '第 2 組 2 份他評')
+
+    # 第 3 組：跳過直接看結果前先評
+    t.click('[data-act=next]'); t.click('[data-act=open]')
+    for s in studs[:2]: s.wait_for_function('_prb.S.T.cur === 3 && _prb.S.T.ph === 2 && _prb.S.names()', timeout=20000)
+    score(studs[0], [2, 3, 3, 3, 2], None, '時間有點超過'); score(studs[1], [3, 3, 4, 3, 3])
+    t.wait_for_function('Object.values(_prb.G.reviews).filter(r => r.pres === 3).length >= 2', timeout=20000)
+    t.keyboard.press('Space'); t.wait_for_timeout(200)
+    t.keyboard.press('Space'); t.wait_for_timeout(500)
+    check(t.evaluate('_prb.G.stage') == 'end', '最後一組按下一步進結果')
+    for s in studs: s.wait_for_function('_prb.S.T.ph === 9', timeout=15000)
+    check('互評結束' in studs[0].inner_text('#app'), '學生看到結束')
+    studs[0].screenshot(path=os.path.join(OUT, '13_stu_end.png'))
+
+    r = t.evaluate('_prb.result()')
+    g1 = r['groups'][0]
+    # 第 1 組：他評 S02 54453、S03 44344、S04 53333、紙本 22222；權重 30/20/20/20/15 → 去頭尾要 5 份，這裡 4 份不去
+    W = [30, 25, 20, 20, 15]; tw = sum(W)  # 海報量表，第一項改成 30%
+    ws = lambda s: sum(a * b for a, b in zip(s, W)) / tw
+    exp = round((ws([5,4,4,5,3]) + ws([4,4,3,4,4]) + ws([5,3,3,3,3]) + ws([2,2,2,2,2])) / 4 * 20 * 10) / 10
+    check(abs(g1['peer'] - exp) < 0.051, '第 1 組同儕分 %s（應為 %s）' % (g1['peer'], exp))
+    check(g1['self'] == 100 and g1['teacher'] == 80, '自評 100、老師 80')
+    check(g1['n'] == 4 and g1['dropped'] == 0, '4 份不去頭尾')
+    check(len(r['ranked']) == 3, '三組都有名次')
+    t.screenshot(path=os.path.join(OUT, '06_end.png'), full_page=True)
+    # 改老師比重即時重算
+    t.click('[data-cfg=teacherW][data-v="50"]'); t.wait_for_timeout(200)
+    g1b = t.evaluate('_prb.result()')['groups'][0]
+    check(abs(g1b['final'] - round((exp * .5 + 80 * .5) * 10) / 10) < 0.11, '老師 50%% 重算 %s' % g1b['final'])
+    body = t.inner_text('#app')
+    check('結論可以再收斂' in body and '時間有點超過' in body, '回饋卡有評語')
+    check('全班強項' in body, '全班觀察')
+    # CSV
+    with t.expect_download() as d: t.click('[data-act=csvRaw]')
+    raw = open(d.value.path(), encoding='utf-8-sig').read()
+    check(raw.count('\n') >= 10 and 'S02' in raw and '紙本' in raw and '老師' in raw, 'CSV 原始分數 %d 列' % raw.count('\n'))
+    with t.expect_download() as d: t.click('[data-act=csvSum]')
+    sm = open(d.value.path(), encoding='utf-8-sig').read()
+    check('校園二手書平台' in sm and '全班平均' in sm, 'CSV 總表')
+    # 列印回饋單（不真的叫出列印視窗）
+    t.evaluate("window.print = () => {}")
+    t.click('[data-act=printSheets]'); t.wait_for_timeout(300)
+    check(t.evaluate("document.querySelectorAll('#printArea .psheet').length") == 3, '回饋單 3 頁')
+    t.emulate_media(media='print')
+    t.pdf(path=os.path.join(OUT, '07_sheets.pdf'), format='A4')
+    t.emulate_media(media='screen')
+    t.evaluate("document.body.classList.remove('print-area')")
+
+    # 375px 無橫向溢出
+    for i, s in enumerate(studs):
+        ov = s.evaluate('document.documentElement.scrollWidth - window.innerWidth')
+        check(ov <= 0, '手機 %d 無橫向溢出 (%s)' % (i + 1, ov))
+    t.set_viewport_size({'width': 400, 'height': 800}); t.wait_for_timeout(200)
+    check(t.evaluate('document.documentElement.scrollWidth - window.innerWidth') <= 0, '老師結果頁 400px 無橫向溢出')
+    t.set_viewport_size({'width': 1366, 'height': 900})
+
+    # 老師重新整理：資料還在
+    t.reload(); t.wait_for_timeout(800)
+    check(t.evaluate('_prb.G.stage') == 'end' and len(t.evaluate('_prb.G.reviews')) >= 10, '重新整理後資料保留')
+    # 再開一場：代碼不變、學生 gid 更新
+    t.click('[data-act=again]'); t.wait_for_timeout(300)
+    gid = t.evaluate('_prb.G.gid')
+    check(t.evaluate('_prb.G.room') == code, '再開一場代碼不變')
+    studs[0].wait_for_function('_prb.S.gid === %d' % gid, timeout=15000)
+    check(studs[0].evaluate('_prb.S.grp') == 1, '學生保留組別')
+    # 關閉教室
+    t.click('[data-act=netOff]'); t.click('[data-act=netOffYes]')
+    studs[1].wait_for_function('_prb.S.closed === 4004', timeout=15000)
+    check(True, '關閉教室 4004')
+    b.close()
+
+errs = [e for e in errs if 'favicon' not in e]
+print('console errors:', errs)
+print('FAILS:', fails if fails else 'none')
+sys.exit(1 if fails or errs else 0)
