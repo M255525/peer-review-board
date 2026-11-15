@@ -5,7 +5,7 @@
 2026-11-15 建立。使用者從「還可以做哪些應用」清單中挑了「同儕互評」。
 
 - 純靜態：`index.html`（CSS，評分單方格紙＋深藍墨水＋紅筆／螢光筆）＋`data.js`（量表預設、計分引擎、轉播站訊息編解碼；node 可 require）＋`app.js`（老師端 `T`、學生端 `S`、連線 `NET`）＋`watermark.js`（列印浮水印，從全班競標複製）＋`manual.html`＋PWA。
-- 本機預覽 port **8884**（`.claude/launch.json` 的 `peer-review-board`）。visitor-badge `m255525.peerreviewboard`。預定線上網址 <https://m255525.github.io/peer-review-board/>（寫死在 `app.js` 的 `ONLINE`，非 github.io 網址時 QR code 一律指向它）。**尚未上線**（repo 由使用者自己 `gh repo create`；先 push 後開 Pages，`build_type=workflow`）。
+- 本機預覽 port **8884**（`.claude/launch.json` 的 `peer-review-board`）。visitor-badge `m255525.peerreviewboard`。預定線上網址 <https://m255525.github.io/peer-review-board/>（寫死在 `app.js` 的 `ONLINE`，非 github.io 網址時 QR code 一律指向它）。**2026-11-15 已上線**（repo 由使用者自己 `gh repo create`；先 push 後才開 Pages，`build_type=workflow`，分支規則已是 master，第一次部署直接成功）。程式牆在 `REPO_META`（不在 LOCAL_APPS），github-dashboard 已補。
 
 ## 引擎（data.js）
 - 6 組預設量表（簡報報告、創業提案、海報作品展、小組專題、行銷企劃、產品展示），自行撰寫，權重各加總 100。最多 6 項、項目名稱最多 8 字（`cleanCrit` 拿掉 `| , ， :`，因為要塞進聊天訊息）。
@@ -29,7 +29,7 @@
 - 測試掛鉤 `window._prb`（G、T、S、NET、ACT、V、P、result()）。
 
 ## 驗證
-- `python tools/e2e_peer.py <截圖資料夾>`（需先開 8884；連**正式轉播站**隨機 PEER 房間；`PRB_BASE` 可測線上版）：老師＋4 支 375px 手機：加入選組、題目傳到手機、自評、修改分數、評語、老師評分、紙本代填、截止後不收、自動截止、結果分數與手算一致、老師比重重算、CSV、回饋單 3 頁、無橫向溢出、重新整理保留、再開一場代碼不變、關閉教室 4004。2026-11-15 全過、無 console 錯誤。
+- `python tools/e2e_peer.py <截圖資料夾>`（需先開 8884；連**正式轉播站**隨機 PEER 房間；`PRB_BASE` 可測線上版）：老師＋4 支 375px 手機：加入選組、題目傳到手機、自評、修改分數、評語、老師評分、紙本代填、截止後不收、自動截止、結果分數與手算一致、老師比重重算、CSV、回饋單 3 頁、無橫向溢出、重新整理保留、再開一場代碼不變、關閉教室 4004。2026-11-15 本機全過、無 console 錯誤；上線後設 `PRB_BASE=https://m255525.github.io/peer-review-board/` 對線上版再跑一輪全過。
 - **真手機掃 QR、投影機、30 人以上同時送出未實測。**
 
 ## 標準配備
