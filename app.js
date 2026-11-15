@@ -227,10 +227,35 @@ var T = {
   push:function(){
     if(!G) return;
     var g = curGrp(), secs = G.ph === 2 ? Math.ceil(Math.max(0, G.until - Date.now()) / 1000) : 0;
-    setName(P.encT({gid:G.gid, groups:G.cfg.groups, cur:g, ph:G.stage === 'end' ? 9 : G.stage === 'setup' ? 0 : G.ph, nc:G.cfg.crit.length, self:G.cfg.self, comments:G.cfg.comments, secs:secs}));
+    setName(P.encT({gid:G.gid, groups:G.cfg.groups, cur:g, ph:G.stage === 'end' ? 9 : G.stage === 'setup' ? 0 : G.ph, nc:G.cfg.crit.length, self:G.cfg.self, comments:G.cfg.comments, locked:!!G.locked, secs:secs}));
+  },
+  // 關閉加入：不在名單上的新連線一律請出（轉播站 kick，關閉碼 4005）；開放加入時 unkick
+  gate:function(id, name){
+    if(!G || !G.locked || id === NET.myId || /^T\|/.test(String(name || ''))) return false;
+    if(G.members[id] || (G.allow || {})[id]) return false;
+    G.kicked = G.kicked || {};
+    if(!G.kicked[id]){ G.kicked[id] = 1; send({t:'kick', id:id}); saveSoon(); }
+    delete NET.peers[id];
+    return true;
+  },
+  setLock:function(on){
+    if(!G) return;
+    if(on){
+      G.locked = true; G.allow = {};
+      Object.keys(G.members).forEach(function(id){ G.allow[id] = 1; });
+      onlineIds().forEach(function(id){ G.allow[id] = 1; });
+      G.kicked = G.kicked || {};
+    } else {
+      G.locked = false; G.allow = {};
+      var left = {};
+      Object.keys(G.kicked || {}).forEach(function(id){ if(!send({t:'unkick', id:id})) left[id] = 1; });
+      G.kicked = left;
+    }
+    T.push(); saveG();
   },
   onPeer:function(id, name){
     if(!G || id === NET.myId) return;
+    if(T.gate(id, name)) return;
     var d = P.decS(name); if(!d || d.gid !== G.gid) return;
     var m = G.members[id] = G.members[id] || {who:'', grp:0};
     m.grp = d.grp;
@@ -244,7 +269,7 @@ var T = {
     saveSoon();
   },
   onChat:function(m){
-    if(!G || !m || m.id === NET.myId) return;
+    if(!G || !m || m.id === NET.myId || (G.kicked || {})[m.id]) return;
     var who = P.decWho(m.text);
     if(who){ var mm = G.members[m.id] = G.members[m.id] || {who:'', grp:0}; mm.who = who; saveSoon(); T.paint(); return; }
     var n = P.decNote(m.text);
@@ -258,6 +283,8 @@ var T = {
   paint:function(){
     netPaint();
     if(!G || JOIN || V.home) return;
+    var lb = document.querySelector('.lockbox');
+    if(lb && G.locked){ var wide = !lb.closest('.roomcard'), tmp = document.createElement('div'); tmp.innerHTML = lockPanel(wide); lb.replaceWith(tmp.firstChild); }
     if(G.stage === 'setup'){ var jb = $('joinList'); if(jb) jb.innerHTML = joinListHtml(); return; }
     if(G.stage !== 'run') return;
     var el = $('meter'); if(el) el.innerHTML = meterHtml();
@@ -336,7 +363,7 @@ function clsListHtml(){
     var n = g ? Object.keys(g.reviews || {}).length : 0;
     return '<div class="clscard' + (here ? ' here' : '') + '"><div class="cn">🏫 ' + esc(c.name) + '</div>' +
       '<div class="cm">' + esc(g && g.cfg.title ? g.cfg.title : '（還沒取活動名稱）') + '</div>' +
-      '<div class="cs"><span class="tag ' + (st[1] === 'live' ? 'green' : st[1] === 'done' ? '' : 'amber') + '">' + st[0] + '</span>' + (g ? '<span class="tag">代碼 ' + esc(g.room) + '</span>' : '') + (n ? '<span class="tag">' + n + ' 份評分</span>' : '') +
+      '<div class="cs"><span class="tag ' + (st[1] === 'live' ? 'green' : st[1] === 'done' ? '' : 'amber') + '">' + st[0] + '</span>' + (g ? '<span class="tag">代碼 ' + esc(g.room) + '</span>' : '') + (g && g.locked ? '<span class="tag red">🔒 關閉加入</span>' : '') + (n ? '<span class="tag">' + n + ' 份評分</span>' : '') +
       (here ? '<span class="tag red">這個分頁</span>' : busy ? '<span class="tag red">在其他分頁開啟中</span>' : '') + '</div>' +
       '<div class="go" style="margin-top:.5rem">' + (here ? '<button class="btn sm" data-act="resume">▶ 回到教室</button>' : '<button class="btn sm" data-act="enterCls" data-id="' + esc(c.id) + '">' + (busy ? '改在這裡開' : '▶ 進入') + '</button>' + (busy ? '' : '<a class="btn alt sm" href="?c=' + esc(c.id) + '" target="_blank" rel="noopener">↗ 新分頁</a>')) +
       '<button class="btn alt sm" data-act="renameCls" data-id="' + esc(c.id) + '">✏ 改名</button><button class="btn alt sm" data-act="delCls" data-id="' + esc(c.id) + '" aria-label="刪除教室">🗑</button></div></div>';
@@ -377,9 +404,10 @@ function setupView(){
 function joinBoxHtml(){
   if(!NET.want) return '<p class="lead">學生用手機掃 QR code 加入、選自己的組別。</p><div class="go"><button class="btn red" data-act="netOn">📱 開放手機加入</button></div><p class="small">不開也能用：收紙本評分單，再用「紙本代填」輸入。</p>';
   var local = !(location.protocol === 'https:' && location.hostname === 'm255525.github.io');
+  if(G.locked) return lockPanel(true);
   return '<div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:center"><div class="qr" id="qrJoin"></div><div style="flex:1 1 14rem"><div style="font-weight:900;font-size:1.15rem">🏫 ' + esc(clsName()) + '</div><div class="small">手機掃描，或打開 ' + esc(ONLINE.replace('https://', '')) + '?join 輸入代碼</div><div style="font-family:var(--serif);font-size:2.4rem;letter-spacing:.12em;color:var(--red)">' + esc(NET.code) + '</div>' +
     (local ? '<p class="small">目前不是線上版網址，QR code 指向線上版。</p>' : '') +
-    '<div class="go"><button class="btn alt sm" data-act="copyJoin">📋 複製加入連結</button><button class="btn alt sm" data-act="bigQR">🔍 放大 QR code</button><button class="btn alt sm" data-act="netOff">🚪 關閉教室</button></div><div id="joinList" class="small" style="margin-top:.5rem">' + joinListHtml() + '</div></div></div>';
+    '<div class="go"><button class="btn alt sm" data-act="copyJoin">📋 複製加入連結</button><button class="btn alt sm" data-act="bigQR">🔍 放大 QR code</button><button class="btn alt sm" data-act="lock">🔒 關閉加入</button><button class="btn alt sm" data-act="netOff">🚪 關閉教室</button></div><div id="joinList" class="small" style="margin-top:.5rem">' + joinListHtml() + '</div></div></div>';
 }
 function liveMembers(){ var on = {}; onlineIds().forEach(function(id){ on[id] = 1; }); return Object.keys(G.members).filter(function(id){ return on[id]; }).map(function(id){ return Object.assign({id:id}, G.members[id]); }); }
 function joinListHtml(){
@@ -431,7 +459,15 @@ function memberHtml(){
   return h;
 }
 function sideRoom(){
-  return '<div class="roomcard noprint"><div style="font-weight:900">🏫 ' + esc(clsName()) + '</div>' + (NET.want ? '<div class="small">掃描或輸入代碼加入</div><div class="qr" id="qrJoin"></div><div class="code">' + esc(NET.code) + '</div><button class="ibtn" data-act="bigQR">🔍 放大</button>' : '<button class="btn red" data-act="netOn">📱 開放手機加入</button>') + '</div>';
+  if(NET.want && G.locked) return '<div class="roomcard noprint">' + lockPanel(false) + '</div>';
+  return '<div class="roomcard noprint"><div style="font-weight:900">🏫 ' + esc(clsName()) + '</div>' + (NET.want ? '<div class="small">掃描或輸入代碼加入</div><div class="qr" id="qrJoin"></div><div class="code">' + esc(NET.code) + '</div><button class="ibtn" data-act="bigQR">🔍 放大</button> <button class="ibtn" data-act="lock">🔒 關閉加入</button>' : '<button class="btn red" data-act="netOn">📱 開放手機加入</button>') + '</div>';
+}
+function lockPanel(wide){
+  var n = Object.keys(G.kicked || {}).length, on = liveMembers().length;
+  return '<div class="lockbox"><div class="li">🔒</div><div><div style="font-weight:900;font-size:1.15rem">🏫 ' + esc(clsName()) + '・已關閉加入</div>' +
+    '<p class="small" style="margin:.2rem 0">已在教室的 ' + on + ' 位同學不受影響（斷線也能回來）；新同學掃碼會被擋下' + (n ? '，目前已擋下 <b>' + n + '</b> 位' : '') + '。</p>' +
+    '<div class="go" style="margin-top:.3rem"><button class="btn green sm" data-act="unlock">🔓 開放加入</button>' + (wide ? '<button class="btn alt sm" data-act="netOff">🚪 關閉教室</button>' : '') + '</div>' +
+    (wide ? '<div id="joinList" class="small" style="margin-top:.5rem">' + joinListHtml() + '</div>' : '') + '</div></div>';
 }
 function scoreRows(prefix, vals){
   return '<div class="scorer">' + G.cfg.crit.map(function(c, i){ return '<div class="srow"><span class="lb">' + esc(c.n) + '<small>' + c.w + '%</small></span>' + [1, 2, 3, 4, 5].map(function(v){ return '<button data-' + prefix + '="' + i + ',' + v + '" aria-pressed="' + (vals[i] === v) + '" title="' + P.LEVELS[v - 1] + '">' + v + '</button>'; }).join('') + '</div>'; }).join('') + '</div>';
@@ -684,8 +720,8 @@ var ACT = {
     if(G && Object.keys(G.reviews).length && !V.sureNew){ openModal('<h2>開新的互評？</h2><p>目前「' + esc(G.cfg.title || '上次的互評') + '」的分數會被取代。需要留存請先到結果頁下載 CSV。</p><div class="stack"><button class="btn red" data-act="newSetupYes">開新的互評</button><button class="btn alt" data-act="close">取消</button></div>'); return; }
     ACT.newSetupYes();
   },
-  newSetupYes:function(){ closeModal(); if(!G){ ACT.newCls(); return; } G = newEvent({}, G.room, G.cid); V.home = false; saveG(); ensureNet(); T.push(); render(); window.scrollTo(0, 0); },
-  again:function(){ var c = JSON.parse(JSON.stringify(G.cfg)); G = newEvent(c, G.room, G.cid); saveG(); T.push(); render(); window.scrollTo(0, 0); toast('同一個代碼，學生不用重新加入'); },
+  newSetupYes:function(){ closeModal(); if(!G){ ACT.newCls(); return; } if(G.locked) T.setLock(false); G = newEvent({}, G.room, G.cid); V.home = false; saveG(); ensureNet(); T.push(); render(); window.scrollTo(0, 0); },
+  again:function(){ if(G.locked) T.setLock(false); var c = JSON.parse(JSON.stringify(G.cfg)); G = newEvent(c, G.room, G.cid); saveG(); T.push(); render(); window.scrollTo(0, 0); toast('同一個代碼，學生不用重新加入'); },
   addCrit:function(){ readCfg(); if(G.cfg.crit.length < P.MAX_CRIT) G.cfg.crit.push({n:'新項目', w:10, h:''}); readCfg(); T.push(); render(); },
   delCrit:function(el){ readCfg(); if(G.cfg.crit.length > 1) G.cfg.crit.splice(+el.dataset.i, 1); readCfg(); T.push(); render(); },
   mvUp:function(el){ var i = +el.dataset.i; if(i > 0){ var o = G.order; o.splice(i - 1, 0, o.splice(i, 1)[0]); } readCfg(); render(); },
@@ -725,10 +761,12 @@ var ACT = {
   csvRaw:function(){ download(clsName() + '_互評原始分數_' + new Date().toISOString().slice(0, 10) + '.csv', csvRaw()); },
   csvSum:function(){ download(clsName() + '_互評總表_' + new Date().toISOString().slice(0, 10) + '.csv', csvSum()); },
   room:function(){ if(!NET.want){ ACT.netOn(); return; } openModal('<h2>📱 讓學生加入</h2>' + joinBoxHtml() + '<div class="stack"><button class="btn alt" data-act="close">關閉</button></div>', true); drawQR('qrJoin', 200); },
-  bigQR:function(){ if(!NET.want) return; openModal('<div style="text-align:center"><h2>📱 掃描加入「' + esc(clsName()) + '」</h2><div class="qr" id="qrBig"></div><div style="font-family:var(--serif);font-size:3.4rem;letter-spacing:.14em;color:var(--red)">' + esc(NET.code) + '</div><p class="small">或打開 ' + esc(ONLINE.replace('https://', '')) + '?join 輸入代碼</p><button class="btn" data-act="close">關閉</button></div>', true); drawQR('qrBig', Math.min(420, window.innerWidth - 80, window.innerHeight - 260)); },
+  lock:function(){ T.setLock(true); closeModal(); render(); toast('已關閉加入：新同學進不來，已在教室的不受影響'); },
+  unlock:function(){ T.setLock(false); render(); toast('已開放加入，被擋下的同學按「再試一次」就能進來'); },
+  bigQR:function(){ if(!NET.want) return; if(G && G.locked){ toast('目前關閉加入中，要先按「🔓 開放加入」'); return; } openModal('<div style="text-align:center"><h2>📱 掃描加入「' + esc(clsName()) + '」</h2><div class="qr" id="qrBig"></div><div style="font-family:var(--serif);font-size:3.4rem;letter-spacing:.14em;color:var(--red)">' + esc(NET.code) + '</div><p class="small">或打開 ' + esc(ONLINE.replace('https://', '')) + '?join 輸入代碼</p><button class="btn" data-act="close">關閉</button></div>', true); drawQR('qrBig', Math.min(420, window.innerWidth - 80, window.innerHeight - 260)); },
   netOn:function(){ if(G){ G.netOff = false; saveG(); } closeModal(); ensureNet(true); render(); },
   netOff:function(){ openModal('<h2>🚪 關閉教室？</h2><p>所有學生會離線，舊的 QR code 和連結從此失效。之後再開放會換一個新代碼。</p><div class="stack"><button class="btn red" data-act="netOffYes">關閉教室</button><button class="btn alt" data-act="close">取消</button></div>'); },
-  netOffYes:function(){ closeModal(); netStop(true); if(G){ G.netOff = true; G.room = P.newRoom(); saveG(); } render(); },
+  netOffYes:function(){ closeModal(); netStop(true); if(G){ G.netOff = true; G.locked = false; G.kicked = {}; G.allow = {}; G.room = P.newRoom(); saveG(); } render(); },
   copyJoin:function(){ copyText(roomUrl(NET.code), '加入連結已複製'); },
   wipeAll:function(){ openModal('<h2>確定嗎？</h2><p>所有教室的分數、評語、設定都會刪掉，無法復原（字體與音效設定會保留）。</p><div class="stack"><button class="btn red" data-act="wipeAllYes">清除全部資料</button><button class="btn alt" data-act="close">取消</button></div>'); },
   wipeAllYes:function(){
@@ -864,7 +902,7 @@ function renderStu(){
   if(!S.code){
     h += '<section class="card margin"><h2>📱 加入互評</h2><p class="lead">輸入老師投影上的 6 碼代碼。</p><div class="amtin"><input id="codeIn" maxlength="6" autocapitalize="characters" autocomplete="off" placeholder="例如 AB3K7Q" style="text-align:center;letter-spacing:.2em;text-transform:uppercase"><button class="btn red" data-act="joinCode">加入</button></div></section>';
   } else if(S.closed){
-    h += '<section class="card"><h2>' + (S.closed === 4005 ? '🚫 你已被請出這個教室' : '🚪 教室已關閉，或老師還沒開放') + '</h2><p class="lead">請看老師投影上的代碼是不是 <b>' + esc(S.code) + '</b>。</p><div class="go"><button class="btn red" data-act="retry">再試一次</button><button class="btn alt" data-act="leave">輸入新代碼</button></div></section>';
+    h += '<section class="card"><h2>' + (S.closed === 4005 ? (S.T && S.T.locked ? '🔒 這個教室已關閉加入' : '🚫 你已被請出這個教室') : '🚪 教室已關閉，或老師還沒開放') + '</h2>' + (S.room ? '<p style="font-weight:900">🏫 ' + esc(S.room) + '</p>' : '') + '<p class="lead">' + (S.closed === 4005 && S.T && S.T.locked ? '老師暫停讓新同學加入。請跟老師確認，等老師開放後再按「再試一次」。' : '請看老師投影上的代碼是不是 <b>' + esc(S.code) + '</b>。') + '</p><div class="go"><button class="btn red" data-act="retry">再試一次</button><button class="btn alt" data-act="leave">輸入新代碼</button></div></section>';
   } else if(S.askWho){
     h += '<section class="card margin"><h2>👤 你是誰？</h2><p class="lead">填學號或姓名（最多 8 個字），只有老師看得到。不要填身分證字號或電話。</p><div class="amtin"><input id="whoIn" maxlength="8" value="' + esc(S.who) + '" placeholder="學號或姓名"><button class="btn red" data-act="saveWho">下一步</button></div></section>';
   } else if(!S.grp || S.pickGrp){

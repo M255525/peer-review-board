@@ -27,10 +27,10 @@ P.PRESETS.forEach(p => {
 
 // 2. 老師狀態
 for (let i = 0; i < 4000; i++) {
-  const t = { gid: 10 + (i % 90), groups: 2 + (i % 19), cur: i % 21, ph: [0, 1, 2, 3, 9][i % 5], nc: 1 + (i % 6), self: !!(i & 1), comments: !!(i & 2), secs: (i * 37) % 1000 };
+  const t = { gid: 10 + (i % 90), groups: 2 + (i % 19), cur: i % 21, ph: [0, 1, 2, 3, 9][i % 5], nc: 1 + (i % 6), self: !!(i & 1), comments: !!(i & 2), locked: !!(i & 4), secs: (i * 37) % 1000 };
   const s = P.encT(t); safe(s, 'T');
   const d = P.decT(s);
-  ok(d && d.gid === t.gid && d.groups === t.groups && d.cur === t.cur && d.ph === t.ph && d.nc === t.nc && d.self === t.self && d.comments === t.comments && d.secs === t.secs, 'T 還原 ' + s);
+  ok(d && d.gid === t.gid && d.groups === t.groups && d.cur === t.cur && d.ph === t.ph && d.nc === t.nc && d.self === t.self && d.comments === t.comments && d.locked === t.locked && d.secs === t.secs, 'T 還原 ' + s);
 }
 // 3. 學生狀態（窮舉組別與部分分數組合）
 for (let gid = 10; gid < 100; gid += 7) for (let grp = 0; grp <= 20; grp++) {
