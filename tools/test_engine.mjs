@@ -62,6 +62,10 @@ const dn = P.decNote(n1); ok(dn && dn.pres === 3 && dn.sign === '+', '評語還�
 ok(P.decWho(P.encWho('  王小明<b>|  ')) === '王小明b', '名字清理');
 ok(P.decTitle(P.encTitle(42, 5, '智慧農業：用感測器省水')).title === '智慧農業：用感測器省水', '題目還原');
 ok(P.cleanWho('1234567890') === '12345678', '名字 8 字');
+ok(P.decRoomName(P.encRoomName('  三年二班 <b>|專題:A  ')) === '三年二班 b專題A', '教室名稱清理 ' + P.decRoomName(P.encRoomName('  三年二班 <b>|專題:A  ')));
+ok(P.encRoomName('一二三四五六七八九十一二三四五六七八九十多出來').length === 22, '教室名稱 20 字');
+ok(P.decRoomName(P.encRoomName('')) === '教室', '空白教室名稱');
+ok(P.decRoomName('P12,03:題目') === null && P.decRubric(P.encRoomName('A,B')) === null, '教室名稱不跟其他訊息混淆');
 
 // 5. 計分
 const crit = [{ n: 'A', w: 50 }, { n: 'B', w: 30 }, { n: 'C', w: 20 }];
