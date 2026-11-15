@@ -69,7 +69,11 @@ with sync_playwright() as p:
     t.wait_for_function('Object.values(_prb.G.members).filter(m => m.grp > 0 && m.who).length >= 4', timeout=20000)
     mem = t.evaluate('Object.values(_prb.G.members).map(m => m.grp + ":" + m.who).sort()')
     check(mem == ['1:S01', '2:S02', '2:S04', '3:S03'], '老師看到成員 %s' % mem)
-    check('已加入 4 人' in t.inner_text('#joinList').replace('<b>', ''), '加入清單 %s' % t.inner_text('#joinList'))
+    jl = t.inner_text('#joinList')
+    check('已加入 4 人' in jl, '加入清單人數')
+    rows = t.evaluate("[...document.querySelectorAll('#joinList .jrow')].map(r => r.innerText.replace(/\s+/g, ' '))")
+    check(len(rows) == 3 and 'S02' in rows[1] and 'S04' in rows[1] and '2 人' in rows[1] and 'S03' in rows[2], '報告前各組列出名字 %s' % rows)
+    t.screenshot(path=os.path.join(OUT, '03a_joinlist.png'), full_page=True)
 
     # 關閉加入：已在教室的不受影響，新同學被擋，開放後可再進
     t.click('[data-act=lock]'); t.wait_for_timeout(300)

@@ -427,7 +427,14 @@ function joinListHtml(){
     for(var i = 1; i <= G.cfg.groups; i++){ var k = (by[i] || []).length; if(!k) miss.push(i); else if(k > 1) dup.push(gname(i)); }
     return '已加入 <b>' + ms.length + '</b> 人' + (by[0] ? '（' + by[0].length + ' 人還沒點名字）' : '') + (miss.length ? '；還沒加入：' + (miss.length > 15 ? miss.length + ' 人' : miss.join('、') + ' 號') : '；全員到齊 🎉') + (dup.length ? '；<b class="neg">⚠ ' + dup.join('、') + ' 有 2 人以上點同一個名字</b>' : '');
   }
-  return '已加入 <b>' + ms.length + '</b> 人：' + Object.keys(by).sort(function(a, b){ return a - b; }).map(function(g){ return (+g ? gname(g) : '還沒選組') + ' ' + by[g].length + ' 人'; }).join('、');
+  // 小組：每組一列，直接列出名字，報告前就能點名
+  var rows = '';
+  for(var g = 1; g <= G.cfg.groups; g++){
+    var nm = by[g] || [];
+    rows += '<div class="jrow">' + gchip(g) + '<span class="jn">' + (G.cfg.names[g - 1] ? esc(G.cfg.names[g - 1]) : gname(g)) + '<small>' + nm.length + ' 人</small></span><span class="jw">' + (nm.length ? nm.map(function(w){ return '<i>' + esc(w) + '</i>'; }).join('') : '<em>還沒有人</em>') + '</span></div>';
+  }
+  if(by[0]) rows += '<div class="jrow"><span class="gchip" style="background:#9AA0B0">?</span><span class="jn">還沒選組<small>' + by[0].length + ' 人</small></span><span class="jw">' + by[0].map(function(w){ return '<i>' + esc(w) + '</i>'; }).join('') + '</span></div>';
+  return '已加入 <b>' + ms.length + '</b> 人<div class="jlist">' + rows + '</div>';
 }
 
 function runView(){
