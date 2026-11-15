@@ -191,6 +191,54 @@ function enterCls(id, force){
   ensureNet(); T.push(); rubricSoon(400); render(); window.scrollTo(0, 0);
 }
 function leaveCls(closeRoom){ if(!G) return; saveG(); lockFree(G.cid); if(NET.want) netStop(closeRoom); G = null; V.home = true; setUrl(null); }
+// A. 使用中不能刪：這個分頁正在評分或還有學生連著，或另一個分頁開著這間
+function clsInUse(id){
+  if(lockBusy(id)) return '這間教室正在另一個分頁使用';
+  if(G && G.cid === id){
+    if(G.stage === 'run' && G.ph === 2) return '這間教室正在評分中';
+    if(NET.want && onlineIds().length) return '這間教室還有 ' + onlineIds().length + ' 位學生連線中';
+  }
+  return '';
+}
+// B. 管理密碼：只存加鹽雜湊（SHA-256），不存明碼
+function hasPin(id){ var c = clsGet(id); return !!(c && c.pin && c.pin.hash); }
+function hex(buf){ return Array.from(new Uint8Array(buf)).map(function(b){ return ('0' + b.toString(16)).slice(-2); }).join(''); }
+function pinHash(salt, pin){
+  var txt = 'prb|' + salt + '|' + pin;
+  if(window.crypto && crypto.subtle && window.TextEncoder) return crypto.subtle.digest('SHA-256', new TextEncoder().encode(txt)).then(hex);
+  var h = 2166136261; for(var i = 0; i < txt.length; i++){ h ^= txt.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }   // 非安全環境（file://）退回 FNV
+  return Promise.resolve('f' + h.toString(16));
+}
+function pinOk(pin){ return /^\d{4,6}$/.test(pin); }
+function makePin(pin){ var salt = randId(); return pinHash(salt, pin).then(function(h){ return {salt:salt, hash:h}; }); }
+function setPin(id, pinObj){ var l = clsList(); l.forEach(function(c){ if(c.id === id){ if(pinObj) c.pin = pinObj; else delete c.pin; } }); clsSave(l); }
+function checkPin(id, pin){
+  var c = clsGet(id); if(!c || !c.pin) return Promise.resolve(true);
+  if(V.pinUntil && Date.now() < V.pinUntil) return Promise.reject('密碼錯太多次，請 ' + Math.ceil((V.pinUntil - Date.now()) / 1000) + ' 秒後再試');
+  return pinHash(c.pin.salt, String(pin || '')).then(function(h){
+    if(h === c.pin.hash){ V.pinFail = 0; return true; }
+    V.pinFail = (V.pinFail || 0) + 1; if(V.pinFail >= 5){ V.pinFail = 0; V.pinUntil = Date.now() + 60000; }
+    return false;
+  });
+}
+// 需要開教室的人才能做的事：有密碼就要求輸入，沒密碼就是一般確認
+function guard(id, o, fn){
+  V.guard = {id:id, fn:fn, read:o.read};
+  openModal('<h2>' + o.title + '</h2>' + (o.body || '') + (hasPin(id) ? '<label class="fld" style="margin-top:.6rem">🔐 這間教室的管理密碼<input id="pinIn" type="password" inputmode="numeric" maxlength="6" autocomplete="off" placeholder="開教室時設定的 4～6 位數字"><small>只有開這間教室的人知道密碼。</small></label>' : '') +
+    '<div class="stack"><button class="btn ' + (o.danger ? 'red' : '') + '" data-act="guardOk">' + o.btn + '</button><button class="btn alt" data-act="close">取消</button></div>');
+  setTimeout(function(){ var i = $('pinIn') || $('clsName'); if(i) i.focus(); }, 50);
+}
+function pinFields(withOld){
+  return (withOld ? '<label class="fld">目前的密碼<input id="pinOld" type="password" inputmode="numeric" maxlength="6" autocomplete="off"></label>' : '') +
+    '<div class="form" style="margin-top:.4rem"><label class="fld">' + (withOld ? '新密碼' : '管理密碼（選填）') + '<input id="clsPin" type="password" inputmode="numeric" maxlength="6" autocomplete="new-password" placeholder="4～6 位數字"></label><label class="fld">再輸入一次<input id="clsPin2" type="password" inputmode="numeric" maxlength="6" autocomplete="new-password"></label></div>';
+}
+function readNewPin(){
+  var a = String(($('clsPin') || {}).value || '').trim(), b = String(($('clsPin2') || {}).value || '').trim();
+  if(!a && !b) return {none:true};
+  if(!pinOk(a)) return {err:'管理密碼要 4～6 位數字'};
+  if(a !== b) return {err:'兩次輸入的密碼不一樣'};
+  return {pin:a};
+}
 function clsStatus(g){
   if(!g) return ['尚未設定', ''];
   if(g.stage === 'setup') return ['設定中', ''];
@@ -369,9 +417,9 @@ function clsListHtml(){
     return '<div class="clscard' + (here ? ' here' : '') + '"><div class="cn">🏫 ' + esc(c.name) + '</div>' +
       '<div class="cm">' + esc(g && g.cfg.title ? g.cfg.title : '（還沒取活動名稱）') + (g ? '・' + (g.cfg.target === 'person' ? '個人 ' + g.cfg.groups + ' 人' : '小組 ' + g.cfg.groups + ' 組') : '') + '</div>' +
       '<div class="cs"><span class="tag ' + (st[1] === 'live' ? 'green' : st[1] === 'done' ? '' : 'amber') + '">' + st[0] + '</span>' + (g ? '<span class="tag">代碼 ' + esc(g.room) + '</span>' : '') + (g && g.locked ? '<span class="tag red">🔒 關閉加入</span>' : '') + (n ? '<span class="tag">' + n + ' 份評分</span>' : '') +
-      (here ? '<span class="tag red">這個分頁</span>' : busy ? '<span class="tag red">在其他分頁開啟中</span>' : '') + '</div>' +
+      (here ? '<span class="tag red">這個分頁</span>' : busy ? '<span class="tag red">在其他分頁開啟中</span>' : '') + (hasPin(c.id) ? '<span class="tag">🔐 有管理密碼</span>' : '') + '</div>' +
       '<div class="go" style="margin-top:.5rem">' + (here ? '<button class="btn sm" data-act="resume">▶ 回到教室</button>' : '<button class="btn sm" data-act="enterCls" data-id="' + esc(c.id) + '">' + (busy ? '改在這裡開' : '▶ 進入') + '</button>' + (busy ? '' : '<a class="btn alt sm" href="?c=' + esc(c.id) + '" target="_blank" rel="noopener">↗ 新分頁</a>')) +
-      '<button class="btn alt sm" data-act="renameCls" data-id="' + esc(c.id) + '">✏ 改名</button><button class="btn alt sm" data-act="delCls" data-id="' + esc(c.id) + '" aria-label="刪除教室">🗑</button></div></div>';
+      '<button class="btn alt sm" data-act="renameCls" data-id="' + esc(c.id) + '">✏ 改名</button><button class="btn alt sm" data-act="pinCls" data-id="' + esc(c.id) + '">🔐 ' + (hasPin(c.id) ? '改密碼' : '設密碼') + '</button><button class="btn alt sm' + (clsInUse(c.id) ? ' inuse' : '') + '" data-act="delCls" data-id="' + esc(c.id) + '" aria-label="刪除教室" title="' + esc(clsInUse(c.id) || '刪除教室') + '">🗑</button></div></div>';
   }).join('') + '</div></section>';
   return h;
 }
@@ -736,29 +784,60 @@ var ACT = {
   resume:function(){ if(G) enterCls(G.cid, true); },
   enterCls:function(el){ enterCls(el.dataset.id, !lockBusy(el.dataset.id)); },
   enterForce:function(el){ enterCls(el.dataset.id, true); },
-  newCls:function(){ openModal('<h2>🏫 新增教室</h2><p class="lead">取一個好認的名字，學生手機上也會看到。</p><label class="fld">教室名稱<input id="clsName" maxlength="20" placeholder="例如：三年二班、週六創業班"></label><div class="stack"><button class="btn red" data-act="newClsYes">建立並進入</button><button class="btn alt" data-act="close">取消</button></div>'); setTimeout(function(){ var i = $('clsName'); if(i) i.focus(); }, 50); },
+  newCls:function(){ openModal('<h2>🏫 新增教室</h2><p class="lead">取一個好認的名字，學生手機上也會看到。</p><label class="fld">教室名稱<input id="clsName" maxlength="20" placeholder="例如：三年二班、週六創業班"></label>' + pinFields(false) + '<p class="small">設了管理密碼，<b>刪除、改名、關閉教室</b>都要輸入密碼，別人在這台電腦上也動不了這間教室。共用電腦建議一定要設。密碼忘了無法找回。</p><div class="stack"><button class="btn red" data-act="newClsYes">建立並進入</button><button class="btn alt" data-act="close">取消</button></div>'); setTimeout(function(){ var i = $('clsName'); if(i) i.focus(); }, 50); },
   newClsYes:function(){
     var name = P.cleanRoomName(($('clsName') || {}).value);
     if(!name){ toast('請輸入教室名稱'); return; }
     if(clsList().some(function(c){ return c.name === name; })){ toast('已經有同名的教室'); return; }
-    var id = newClsId(), l = clsList(); l.push({id:id, name:name, at:Date.now()}); clsSave(l);
-    closeModal(); enterCls(id, true); toast('已建立「' + name + '」');
+    var np = readNewPin(); if(np.err){ toast(np.err); return; }
+    (np.pin ? makePin(np.pin) : Promise.resolve(null)).then(function(pinObj){
+      var id = newClsId(), l = clsList(), c = {id:id, name:name, at:Date.now()}; if(pinObj) c.pin = pinObj; l.push(c); clsSave(l);
+      closeModal(); enterCls(id, true); toast('已建立「' + name + '」' + (pinObj ? '（有管理密碼）' : ''));
+    });
   },
-  renameCls:function(el){ var id = el.dataset.id; openModal('<h2>✏ 改教室名稱</h2><label class="fld">教室名稱<input id="clsName" maxlength="20" value="' + esc(clsName(id)) + '"></label><div class="stack"><button class="btn red" data-act="renameYes" data-id="' + esc(id) + '">儲存</button><button class="btn alt" data-act="close">取消</button></div>'); },
-  renameYes:function(el){
-    var id = el.dataset.id, name = P.cleanRoomName(($('clsName') || {}).value);
-    if(!name){ toast('請輸入教室名稱'); return; }
-    if(clsList().some(function(c){ return c.name === name && c.id !== id; })){ toast('已經有同名的教室'); return; }
+  renameCls:function(el){ var id = el.dataset.id; guard(id, {title:'✏ 改教室名稱', body:'<label class="fld">教室名稱<input id="clsName" maxlength="20" value="' + esc(clsName(id)) + '"></label>', btn:'儲存', read:function(){ return P.cleanRoomName(($('clsName') || {}).value); }}, function(name){
+    if(!name){ toast('請輸入教室名稱'); return false; }
+    if(clsList().some(function(c){ return c.name === name && c.id !== id; })){ toast('已經有同名的教室'); return false; }
     var l = clsList(); l.forEach(function(c){ if(c.id === id) c.name = name; }); clsSave(l);
-    closeModal(); if(G && G.cid === id) nameSoon(); render();
+    if(G && G.cid === id) nameSoon(); render(); toast('已改名為「' + name + '」');
+  }); },
+  guardOk:function(){
+    var g = V.guard; if(!g) return;
+    var val = g.read ? g.read() : null, pin = ($('pinIn') || {}).value;
+    if(hasPin(g.id) && !pin){ toast('請輸入管理密碼'); return; }
+    checkPin(g.id, pin).then(function(ok){
+      if(!ok){ toast('管理密碼不對'); var i = $('pinIn'); if(i){ i.value = ''; i.focus(); } return; }
+      if(g.fn(val) === false) return;
+      V.guard = null; closeModal();
+    }, function(msg){ toast(msg); });
   },
-  delCls:function(el){ var id = el.dataset.id; if(lockBusy(id)){ toast('這間教室正在其他分頁開啟，請先在那邊回到首頁'); return; } openModal('<h2>🗑 刪除「' + esc(clsName(id)) + '」？</h2><p>這間教室的設定、分數、評語都會刪掉，無法復原；學生會離線。需要留存請先下載 CSV。</p><div class="stack"><button class="btn red" data-act="delClsYes" data-id="' + esc(id) + '">刪除教室</button><button class="btn alt" data-act="close">取消</button></div>'); },
-  delClsYes:function(el){
-    var id = el.dataset.id;
-    if(G && G.cid === id) leaveCls(true);
-    clsSave(clsList().filter(function(c){ return c.id !== id; })); lsDel(evKey(id)); lsDel('lock.' + id);
-    closeModal(); render(); toast('已刪除教室');
+  pinCls:function(el){
+    var id = el.dataset.id, has = hasPin(id);
+    V.pinId = id;
+    openModal('<h2>🔐 「' + esc(clsName(id)) + '」的管理密碼</h2><p class="lead">' + (has ? '輸入目前的密碼才能修改。新密碼兩欄都留空＝取消密碼。' : '設了之後，刪除、改名、關閉教室都要輸入這組密碼。') + '</p>' + pinFields(has) + '<p class="small">密碼只存在這台電腦（加密雜湊），忘了無法找回。</p><div class="stack"><button class="btn red" data-act="pinSave">儲存</button><button class="btn alt" data-act="close">取消</button></div>');
   },
+  pinSave:function(){
+    var id = V.pinId, has = hasPin(id), np = readNewPin();
+    if(np.err){ toast(np.err); return; }
+    if(!has && np.none){ toast('請輸入 4～6 位數字'); return; }
+    checkPin(id, ($('pinOld') || {}).value).then(function(ok){
+      if(!ok){ toast('目前的密碼不對'); return; }
+      (np.pin ? makePin(np.pin) : Promise.resolve(null)).then(function(pinObj){
+        setPin(id, pinObj); closeModal(); render(); toast(pinObj ? '已設定管理密碼' : '已取消管理密碼');
+      });
+    }, function(msg){ toast(msg); });
+  },
+  delCls:function(el){
+    var id = el.dataset.id, why = clsInUse(id);
+    if(why){ openModal('<h2>🔒 教室使用中，不能刪除</h2><p>' + esc(why) + '。</p><p class="lead">請等評分結束，並在教室裡按「🚪 關閉教室」讓學生離線（或關掉另一個分頁）後再刪除。</p><div class="stack"><button class="btn" data-act="close">知道了</button></div>'); return; }
+    guard(id, {title:'🗑 刪除「' + esc(clsName(id)) + '」？', body:'<p>這間教室的設定、分數、評語都會刪掉，無法復原。需要留存請先下載 CSV。</p>', btn:'刪除教室', danger:true}, function(){
+      if(clsInUse(id)){ toast('教室剛好有人在用，已取消刪除'); return; }
+      if(G && G.cid === id) leaveCls(true);
+      clsSave(clsList().filter(function(c){ return c.id !== id; })); lsDel(evKey(id)); lsDel('lock.' + id);
+      render(); toast('已刪除教室');
+    });
+  },
+  delClsYes:function(){},
   newSetup:function(){
     if(G && Object.keys(G.reviews).length && !V.sureNew){ openModal('<h2>開新的互評？</h2><p>目前「' + esc(G.cfg.title || '上次的互評') + '」的分數會被取代。需要留存請先到結果頁下載 CSV。</p><div class="stack"><button class="btn red" data-act="newSetupYes">開新的互評</button><button class="btn alt" data-act="close">取消</button></div>'); return; }
     ACT.newSetupYes();
@@ -809,10 +888,14 @@ var ACT = {
   unlock:function(){ T.setLock(false); render(); toast('已開放加入，被擋下的同學按「再試一次」就能進來'); },
   bigQR:function(){ if(!NET.want) return; if(G && G.locked){ toast('目前關閉加入中，要先按「🔓 開放加入」'); return; } openModal('<div style="text-align:center"><h2>📱 掃描加入「' + esc(clsName()) + '」</h2><div class="qr" id="qrBig"></div><div style="font-family:var(--serif);font-size:3.4rem;letter-spacing:.14em;color:var(--red)">' + esc(NET.code) + '</div><p class="small">或打開 ' + esc(ONLINE.replace('https://', '')) + '?join 輸入代碼</p><button class="btn" data-act="close">關閉</button></div>', true); drawQR('qrBig', Math.min(420, window.innerWidth - 80, window.innerHeight - 260)); },
   netOn:function(){ if(G){ G.netOff = false; saveG(); } closeModal(); ensureNet(true); render(); },
-  netOff:function(){ openModal('<h2>🚪 關閉教室？</h2><p>所有學生會離線，舊的 QR code 和連結從此失效。之後再開放會換一個新代碼。</p><div class="stack"><button class="btn red" data-act="netOffYes">關閉教室</button><button class="btn alt" data-act="close">取消</button></div>'); },
+  netOff:function(){ if(!G) return; guard(G.cid, {title:'🚪 關閉教室？', body:'<p>所有學生會離線，舊的 QR code 和連結從此失效。之後再開放會換一個新代碼。</p>', btn:'關閉教室', danger:true}, function(){ ACT.netOffYes(); }); },
   netOffYes:function(){ closeModal(); netStop(true); if(G){ G.netOff = true; G.locked = false; G.kicked = {}; G.allow = {}; G.room = P.newRoom(); saveG(); } render(); },
   copyJoin:function(){ copyText(roomUrl(NET.code), '加入連結已複製'); },
-  wipeAll:function(){ openModal('<h2>確定嗎？</h2><p>所有教室的分數、評語、設定都會刪掉，無法復原（字體與音效設定會保留）。</p><div class="stack"><button class="btn red" data-act="wipeAllYes">清除全部資料</button><button class="btn alt" data-act="close">取消</button></div>'); },
+  wipeAll:function(){
+    var used = clsList().filter(function(c){ return clsInUse(c.id); }), locked = clsList().filter(function(c){ return hasPin(c.id); });
+    if(used.length || locked.length){ openModal('<h2>🧹 不能一次清除</h2>' + (used.length ? '<p>使用中的教室：<b>' + used.map(function(c){ return esc(c.name); }).join('、') + '</b>。</p>' : '') + (locked.length ? '<p>有管理密碼的教室：<b>' + locked.map(function(c){ return esc(c.name); }).join('、') + '</b>。這些只能由開教室的人在首頁逐間刪除。</p>' : '') + '<div class="stack"><button class="btn" data-act="close">知道了</button></div>'); return; }
+    openModal('<h2>確定嗎？</h2><p>所有教室的分數、評語、設定都會刪掉，無法復原（字體與音效設定會保留）。</p><div class="stack"><button class="btn red" data-act="wipeAllYes">清除全部資料</button><button class="btn alt" data-act="close">取消</button></div>');
+  },
   wipeAllYes:function(){
     if(NET.want) netStop(NET.role === 'T');
     G = null; setUrl(null);

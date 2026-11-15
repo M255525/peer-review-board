@@ -71,7 +71,7 @@ with sync_playwright() as p:
     check(mem == ['1:S01', '2:S02', '2:S04', '3:S03'], '老師看到成員 %s' % mem)
     jl = t.inner_text('#joinList')
     check('已加入 4 人' in jl, '加入清單人數')
-    rows = t.evaluate("[...document.querySelectorAll('#joinList .jrow')].map(r => r.innerText.replace(/\s+/g, ' '))")
+    rows = t.evaluate("[...document.querySelectorAll('#joinList .jrow')].map(r => r.innerText.replace(/\\s+/g, ' '))")
     check(len(rows) == 3 and 'S02' in rows[1] and 'S04' in rows[1] and '2 人' in rows[1] and 'S03' in rows[2], '報告前各組列出名字 %s' % rows)
     t.screenshot(path=os.path.join(OUT, '03a_joinlist.png'), full_page=True)
 
@@ -222,7 +222,10 @@ with sync_playwright() as p:
     t2.goto(BASE); t2.wait_for_timeout(600)
     lst = t2.inner_text('#clsList')
     check('三年二班' in lst and '在其他分頁開啟中' in lst, '首頁列出教室＋其他分頁開啟中')
-    t2.click('[data-act=newCls]'); t2.fill('#clsName', '週六創業班'); t2.click('[data-act=newClsYes]')
+    t2.click('[data-act=newCls]'); t2.fill('#clsName', '週六創業班')
+    t2.fill('#clsPin', '1234'); t2.fill('#clsPin2', '1243'); t2.click('[data-act=newClsYes]'); t2.wait_for_timeout(200)
+    check(t2.is_visible('#modal.show'), '兩次密碼不同會擋下')
+    t2.fill('#clsPin2', '1234'); t2.click('[data-act=newClsYes]')
     t2.wait_for_function('_prb.NET.status === "on"', timeout=15000)
     code2 = t2.evaluate('_prb.NET.code')
     check(code2 != code and t.evaluate('_prb.NET.status') == 'on', '兩間教室各自代碼、同時連線 (%s / %s)' % (code, code2))
@@ -241,7 +244,11 @@ with sync_playwright() as p:
     check('已在另一個分頁開啟' in t3.inner_text('#modal'), '同一間教室重複開分頁會擋下')
     t3.close()
     # 改名：學生手機跟著更新
-    t2.click('.top [data-act=renameCls]'); t2.fill('#clsName', '週六創業A班'); t2.click('[data-act=renameYes]')
+    rooms = t2.evaluate("localStorage.getItem('prb.rooms')")
+    check('"hash"' in rooms and '1234' not in rooms, '管理密碼只存雜湊、不存明碼')
+    t2.click('.top [data-act=renameCls]'); t2.fill('#clsName', '週六創業A班'); t2.fill('#pinIn', '9999'); t2.click('[data-act=guardOk]'); t2.wait_for_timeout(500)
+    check(t2.evaluate("_prb.ACT && JSON.parse(localStorage.getItem('prb.rooms')).some(c => c.name === '週六創業班')"), '密碼錯誤不能改名')
+    t2.fill('#pinIn', '1234'); t2.click('[data-act=guardOk]')
     s5.wait_for_function('_prb.S.room === "週六創業A班"', timeout=20000)
     check(True, '改教室名稱，學生手機同步')
 
@@ -296,8 +303,32 @@ with sync_playwright() as p:
     t2.click('[data-act=home]'); t2.wait_for_timeout(300)
     lst = t2.inner_text('#clsList')
     check('週六創業A班' in lst and '三年二班' in lst and '（2 間）' in lst, '首頁列出兩間教室')
+    check('有管理密碼' in lst, '首頁標示有管理密碼')
+    # A：使用中不能刪（第二間還有學生 B01 連著）
+    idB = t2.evaluate('_prb.G.cid')
+    t2.click('[data-act=delCls][data-id="%s"]' % idB); t2.wait_for_timeout(200)
+    check('使用中' in t2.inner_text('#modal'), '還有學生連線時不能刪除教室')
+    t2.click('#modal [data-act=close]')
+    # 第一間在另一個分頁開著，也不能刪
+    t2.click('[data-act=delCls][data-id="%s"]' % clsA); t2.wait_for_timeout(200)
+    check('另一個分頁' in t2.inner_text('#modal'), '其他分頁開著的教室不能刪除')
+    t2.click('#modal [data-act=close]')
+    # 清除全部資料：有密碼或使用中都擋下
+    t2.evaluate("_prb.ACT.wipeAll()"); t2.wait_for_timeout(200)
+    check('不能一次清除' in t2.inner_text('#modal') and '週六創業A班' in t2.inner_text('#modal'), '清除全部資料被擋下')
+    t2.click('#modal [data-act=close]')
+    # 學生離線後：要密碼才能刪
+    c5.close(); t2.wait_for_function('_prb.NET.status !== "on" || Object.keys(_prb.NET.peers).filter(k => !/^T[|]/.test(_prb.NET.peers[k])).length === 0', timeout=20000)
+    t2.wait_for_timeout(2500)
+    t2.click('[data-act=delCls][data-id="%s"]' % idB); t2.wait_for_timeout(200)
+    check(t2.is_visible('#pinIn'), '刪除要輸入管理密碼')
+    t2.fill('#pinIn', '0000'); t2.click('[data-act=guardOk]'); t2.wait_for_timeout(500)
+    check(t2.evaluate("!!JSON.parse(localStorage.getItem('prb.rooms')).find(c => c.id === '%s')" % idB), '密碼錯誤不能刪除')
+    t2.fill('#pinIn', '1234'); t2.click('[data-act=guardOk]'); t2.wait_for_timeout(500)
+    check(not t2.evaluate("!!JSON.parse(localStorage.getItem('prb.rooms')).find(c => c.id === '%s')" % idB) and '（1 間）' in t2.inner_text('#clsList'), '輸入正確密碼才刪除')
+    t2.screenshot(path=os.path.join(OUT, '09b_after_delete.png'), full_page=True)
     t2.screenshot(path=os.path.join(OUT, '09_home_list.png'), full_page=True)
-    c5.close(); t2.close()
+    t2.close()
 
     # 再開一場：代碼不變、學生 gid 更新
     t.click('[data-act=again]'); t.wait_for_timeout(300)
@@ -306,7 +337,7 @@ with sync_playwright() as p:
     studs[0].wait_for_function('_prb.S.gid === %d' % gid, timeout=15000)
     check(studs[0].evaluate('_prb.S.grp') == 1, '學生保留組別')
     # 關閉教室
-    t.click('[data-act=netOff]'); t.click('[data-act=netOffYes]')
+    t.click('[data-act=netOff]'); t.click('[data-act=guardOk]')
     studs[1].wait_for_function('_prb.S.closed === 4004', timeout=15000)
     check(True, '關閉教室 4004')
     b.close()
