@@ -1,9 +1,10 @@
 // 加入主畫面＋離線可用。network-first＋同源快取備援，不快取跨網域請求。
-const CACHE_NAME = 'peer-review-board-v8';
+const CACHE_NAME = 'peer-review-board-v9';
 const SHELL_FILES = [
   './',
   './index.html',
   './data.js',
+  './course-link.js',
   './watermark.js',
   './app.js',
   './manual.html',

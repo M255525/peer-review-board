@@ -38,6 +38,10 @@
 - **刪除保護（2026-11-15，使用者選 A＋B）**：A `clsInUse(id)`＝另一分頁開著（鎖）、本分頁評分中（ph 2）或還有學生連線 → 🗑 只提示原因、不能刪；⚙ 清除全部資料在有教室使用中或有任何管理密碼時擋下。B 每間教室選填 4～6 位數管理密碼，存在 `rooms[].pin = {salt, hash}`（`SHA-256('prb|'+salt+'|'+pin)`，file:// 無 `crypto.subtle` 時退回 FNV），**刪除、改名、關閉教室**走 `guard(id, {title, body, btn, read}, fn)` 確認框（有密碼才出現密碼欄，按鈕 `guardOk`），連錯 5 次鎖 60 秒；🔐 設密碼／改密碼（需舊密碼、新密碼留空＝取消）。資料仍在瀏覽器，清網站資料擋不住（寫在手冊限制）。
 - 首頁「🏫 我的教室」每 2 秒重畫一次（更新「在其他分頁開啟中」），彈窗開著時不重畫。
 
+## 課程專案（2026-11-19，`course-link.js` 是 `課程平台/course-link/` 正本的複製檔，別直接改）
+- 設定頁①「📥 從課程專案帶入」（`mkApply`，只在 setup）：個人模式 names＝學生姓名（`cleanWho`，≤60）；小組模式依學生 `group` 出現順序分組，記在 `G.mkGroups`（沒有組別只提示）。活動名稱空白時帶課名。連結 `G.mk`。
+- 結果頁「📤 存到課程專案」（`mkExport`）：`results['peer-review'] = {title, target, crit, groups[{no, name, title, final, peer, teacher, self, rank, n}], scores{學生鍵: final}}`；個人模式用姓名對（同名跳過），小組模式用 `G.mkGroups` 對組別。**不存評語與評分者**。封鎖網站資料時按鈕不出現。跨工具測試 `課程平台/course-link/tools/e2e_link.py`。
+
 ## 畫面
 - 老師 localStorage 前綴 `prb.`：`rooms`、`event.<id>`（整場 G：cfg、order、reviews、notes、members…）、`lock.<id>`、`cfg`（上次的量表與規則）、`tpOpen/ppOpen`（面板展開）、`fs`、`mute`、`fold`、`warnSeen`、`marquee`。學生：`who`、`grp.<碼>`、`sid.<碼>`、`room.<碼>`、`mine.<碼>.<gid>`。
 - 進行中只局部更新（`T.paint`：收到份數、各組狀況），避免打斷老師輸入；空白鍵＝開放評分／截止／下一組。評分倒數到 0 自動截止；評分中每 10 秒重送剩餘秒數。

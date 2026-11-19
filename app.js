@@ -427,9 +427,59 @@ function feat(ic, h, p){ return '<div class="feat"><div class="fi">' + ic + '</d
 function segBtns(key, opts){ return '<div class="seg">' + opts.map(function(o){ return '<button data-cfg="' + key + '" data-v="' + o[0] + '" aria-pressed="' + (String(G.cfg[key]) === String(o[0])) + '">' + o[1] + '</button>'; }).join('') + '</div>'; }
 function wsum(){ return G.cfg.crit.reduce(function(a, c){ return a + (+c.w || 0); }, 0); }
 
+/* ---------- 課程專案（course-link.js；沒有也照常運作） ---------- */
+var MK = window.MKCourse && window.MKCourse.store ? window.MKCourse : null;
+function mkGroupsOf(d){ var seen = []; d.students.forEach(function(s){ var g = (s.group || '').trim(); if(g && seen.indexOf(g) < 0) seen.push(g); }); return seen; }
+function mkPickHtml(){
+  var list = MK.store.list();
+  return '<h2>📥 從課程專案帶入</h2><p class="small">課程專案是同一台電腦上各辦訓工具共用的課程與名單（出席簽到 QR、訓練證書產生器…）。' + (isPer() ? '個人報告：用名單建立評分對象（取代目前名單，最多 ' + P.MAX_PERSONS + ' 人）。' : '小組報告：依名單的「組別」決定組數。') + '量表與規則不動。</p>' +
+    (list.length ? '<div class="go" style="flex-direction:column;align-items:stretch">' + list.map(function(d){ return '<button class="btn alt" data-act="mkIn" data-id="' + esc(d.id) + '">' + esc(MKCourse.label(d)) + ' <small>' + esc(MKCourse.when(d)) + (G.mk === d.id ? '・目前連結' : '') + '</small></button>'; }).join('') + '</div>' : '<p>這台電腦還沒有課程專案。可以先在出席簽到 QR 的名單按「📤 存到課程專案」。</p>') +
+    '<div class="go"><label class="btn alt" style="cursor:pointer">📂 開啟課程專案檔（.json）<input type="file" id="mkFile" accept=".json,application/json" hidden></label><button class="btn alt" data-act="close">取消</button></div>';
+}
+function mkApply(id){
+  var d = MK.store.get(id); if(!d){ toast('找不到這個課程專案'); return; }
+  if(G.stage !== 'setup'){ toast('開始互評後不能換名單'); return; }
+  readCfg();
+  var c = G.cfg, msg;
+  if(!c.title && d.course.title) c.title = d.course.title.slice(0, 30);
+  if(isPer()){
+    var names = d.students.map(function(st){ return P.cleanWho(st.name || st.sid); }).filter(Boolean).slice(0, P.MAX_PERSONS);
+    if(names.length < 2){ toast('課程專案的名單不到 2 人'); return; }
+    c.names = names; c.groups = names.length; G.mkGroups = null;
+    msg = '已帶入 ' + names.length + ' 人' + (d.students.length > P.MAX_PERSONS ? '（超過 ' + P.MAX_PERSONS + ' 人的部分沒帶入）' : '');
+  } else {
+    var gs = mkGroupsOf(d);
+    if(gs.length < 2){ toast('課程專案的名單沒有「組別」，請自己選組數'); G.mk = d.id; saveSoon(); closeModal(); render(); return; }
+    gs = gs.slice(0, P.MAX_GROUPS); c.groups = gs.length; c.names = c.names.slice(0, c.groups); G.mkGroups = gs;
+    msg = '依組別分成 ' + gs.length + ' 組（' + gs.join('、') + '）';
+  }
+  G.mk = d.id; syncOrder(); G.members = {}; T.push(); rosterSoon(); saveG(); closeModal(); render(); toast(msg);
+}
+function mkExport(){
+  var res = result(), c = G.cfg, d = G.mk && MK.store.get(G.mk);
+  var groups = res.groups.map(function(g){ return {no:g.grp, name:isPer() ? (c.names[g.grp - 1] || '') : (G.mkGroups && G.mkGroups[g.grp - 1]) || '第' + g.grp + '組', title:isPer() ? '' : g.title, final:g.final, peer:g.peer, teacher:g.teacher, self:g.self, rank:g.rank || null, n:g.n}; });
+  var scores = {};
+  if(d){
+    var byName = {}; d.students.forEach(function(st){ var k = P.cleanWho(st.name); byName[k] = byName[k] ? 'dup' : st; });
+    res.groups.forEach(function(g){
+      if(g.final == null) return;
+      if(isPer()){ var st = byName[c.names[g.grp - 1]]; if(st && st !== 'dup') scores[MKCourse.studentKey(st)] = g.final; }
+      else if(G.mkGroups){ var lb = G.mkGroups[g.grp - 1]; d.students.forEach(function(st){ if((st.group || '').trim() === lb) scores[MKCourse.studentKey(st)] = g.final; }); }
+    });
+  }
+  var patch = {result:{title:c.title, target:c.target, crit:c.crit.map(function(x){ return x.n; }), groups:groups, scores:scores}};
+  if(!d) patch.course = {title:c.title || clsName()};
+  var doc = MK.store.save(d ? G.mk : null, patch, 'peer-review');
+  if(!doc){ toast('存不進這台電腦（瀏覽器空間不足或封鎖網站資料）'); return; }
+  G.mk = doc.id; saveG();
+  var n = Object.keys(scores).length;
+  openModal('<h2>📤 已存到課程專案</h2><p>「' + esc(MKCourse.label(doc)) + '」</p><p class="small">存了每' + U('組', '人') + '的最後得分（100 分制）與名次' + (n ? '，並對應到名單上 ' + n + ' 位學員' : d ? '；名單上的名字對不上，所以沒有對應到個別學員' : '') + '。只存分數，<b>不存評語與評分者</b>。再按一次會更新。</p><div class="go"><button class="btn" data-act="close">好</button></div>');
+}
+
 function setupView(){
   var c = G.cfg;
   var h = topBar() + '<section class="card margin"><h2>① 活動資料</h2><p class="lead">教室：<b>🏫 ' + esc(clsName()) + '</b>　<button class="btn alt sm" data-act="renameCls" data-id="' + esc(G.cid) + '">✏ 改名</button></p><div class="form">' +
+    (MK ? '<div class="go" style="margin:0 0 .4rem"><button class="btn alt sm" data-act="mkPick">📥 從課程專案帶入' + (isPer() ? '名單' : '組別') + '</button></div>' : '') +
     '<label class="fld">活動名稱<input id="cTitle" maxlength="30" value="' + esc(c.title) + '" placeholder="例如：期末專題發表"></label>' +
     '<div class="fld">評量對象<small>' + (isPer() ? '每個人輪流上台，全班幫他打分' : '每組輪流上台，其他組的人幫他們打分') + '</small>' + segBtns('target', [['group', '👥 小組報告（組對組）'], ['person', '🙋 個人報告（人對人）']]) + '</div>' +
     (isPer() ? '<div class="fld">人數<div style="font-family:var(--serif);font-size:1.6rem;line-height:2.4rem" id="perN">' + c.groups + ' 人</div><small>名單有幾行就是幾人（2～' + P.MAX_PERSONS + ' 人）</small></div></div>' +
@@ -590,7 +640,7 @@ function endView(){
   var total = Object.keys(G.reviews).filter(function(k){ var r = G.reviews[k]; return r.kind === 'peer' || r.kind === 'paper'; }).length;
   var people = {}; Object.keys(G.reviews).forEach(function(k){ var r = G.reviews[k]; if(r.kind === 'peer' || r.kind === 'self') people[r.rid] = 1; });
   var h = topBar() + '<section class="card margin"><div style="display:flex;flex-wrap:wrap;gap:.6rem;align-items:center"><h2 style="flex:1 1 14rem">📊 ' + esc(clsName()) + (c.title ? '・' + esc(c.title) : '') + '・結果</h2>' +
-    '<button class="btn alt sm" data-act="backRun">↩ 回到評分</button><button class="btn sm" data-act="printSheets">🖨 印' + U('各組', '每人') + '回饋單</button><button class="btn alt sm" data-act="csvRaw">⬇ 原始分數 CSV</button><button class="btn alt sm" data-act="csvSum">⬇ 總表 CSV</button></div>' +
+    '<button class="btn alt sm" data-act="backRun">↩ 回到評分</button><button class="btn sm" data-act="printSheets">🖨 印' + U('各組', '每人') + '回饋單</button><button class="btn alt sm" data-act="csvRaw">⬇ 原始分數 CSV</button><button class="btn alt sm" data-act="csvSum">⬇ 總表 CSV</button>' + (MK ? '<button class="btn alt sm" data-act="mkOut">📤 存到課程專案</button>' : '') + '</div>' +
     '<p class="lead">' + c.groups + U(' 組', ' 人') + '・同儕評分 ' + total + ' 份・手機參與 ' + Object.keys(people).length + ' 人。分數＝各項加權平均，換算成 100 分。</p>' +
     '<div class="form noprint" style="margin-top:.4rem"><div class="fld">老師分數比重' + segBtns('teacherW', [[0, '不算'], [20, '20%'], [30, '30%'], [50, '50%']]) + '</div>' + (isPer() ? '' : '<div class="fld">計分單位' + segBtns('mode', [['person', '每人一票'], ['group', '每組一票']]) + '</div>') + '<div class="fld">去掉最高與最低' + segBtns('trim', [[true, '去掉'], [false, '不去掉']]) + '</div></div></section>';
   h += '<section class="card"><h2>🏆 排名</h2>' + (res.ranked.length ? '<div class="rank">' + res.ranked.map(function(x){
@@ -768,6 +818,7 @@ function parseMin(v){ var m = parseFloat(String(v || '').replace(/[^0-9.]/g, '')
 document.addEventListener('change', function(e){
   if(!JOIN && G && e.target.id === 'cPresMin'){ var sec = parseMin(e.target.value); if(!sec){ toast('報告時間請輸入 0.5～60 分鐘'); e.target.value = fmtMin(G.cfg.presSec); return; } G.cfg.presSec = sec; G.pres.left = sec * 1000; readCfg(); render(); toast('報告時間 ' + fmtMin(sec) + ' 分鐘'); return; }
   var t = e.target; if(JOIN || !G) return;
+  if(t.id === 'mkFile' && t.files[0]){ var mf = new FileReader(); mf.onload = function(){ t.value = ''; var r = MKCourse.fromText(mf.result); if(r.error){ toast(r.error); return; } var last = null; r.docs.forEach(function(x){ last = MK.store.put(x) || last; }); if(!last){ toast('存不進這台電腦（瀏覽器空間不足或封鎖網站資料）'); return; } if(r.docs.length === 1) mkApply(last.id); else openModal(mkPickHtml()); }; mf.readAsText(t.files[0]); return; }
   if(t.id === 'cGroups'){ readCfg(); var n = +t.value; G.cfg.groups = n; G.cfg.names = G.cfg.names.slice(0, n); G.order = G.order.filter(function(x){ return x <= n; }); for(var i = 1; i <= n; i++) if(G.order.indexOf(i) < 0) G.order.push(i); readCfg(); T.push(); render(); }
   if(t.id === 'pGrp') G.pdraft.grp = +t.value;
   if(t.id === 'cNames' && G.cfg.target === 'person'){ readCfg(); rosterSoon(); render(); }
@@ -897,6 +948,9 @@ var ACT = {
   printSheets:function(){ printHtml(sheetsHtml()); },
   printBlank:function(){ readCfg(); printHtml(blankHtml()); },
   csvRaw:function(){ download(clsName() + '_互評原始分數_' + new Date().toISOString().slice(0, 10) + '.csv', csvRaw()); },
+  mkPick:function(){ readCfg(); openModal(mkPickHtml()); },
+  mkIn:function(el){ mkApply(el.dataset.id); },
+  mkOut:function(){ mkExport(); },
   csvSum:function(){ download(clsName() + '_互評總表_' + new Date().toISOString().slice(0, 10) + '.csv', csvSum()); },
   room:function(){ if(!NET.want){ ACT.netOn(); return; } openModal('<h2>📱 讓學生加入</h2>' + joinBoxHtml() + '<div class="stack"><button class="btn alt" data-act="close">關閉</button></div>', true); drawQR('qrJoin', 200); },
   lock:function(){ T.setLock(true); closeModal(); render(); toast('已關閉加入：新同學進不來，已在教室的不受影響'); },
